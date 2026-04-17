@@ -6,6 +6,8 @@
 # Node artifact files
 node_modules/
 dist/
+.next/
+*.tsbuildinfo
 
 # Compiled Java class files
 *.class
@@ -15,6 +17,10 @@ dist/
 
 # Log files
 *.log
+.env
+.env.local
+.env.development.local
+.env.production.local
 
 # Package files
 *.jar
