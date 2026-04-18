@@ -26,10 +26,16 @@ import {
   SafetyOutlined,
   EnvironmentOutlined,
   RiseOutlined,
-  SafetyCertificateOutlined
+  SafetyCertificateOutlined,
+  UserAddOutlined,
+  FundOutlined,
+  WalletOutlined
 } from "@ant-design/icons";
 import { usePathname, useRouter } from "next/navigation";
 import type { MenuProps } from "antd";
+import { useAppSelector } from "@/redux/hooks";
+import { selectSession } from "@/redux/features/auth/authSlice";
+import { gymMembershipRoleFromSession } from "@/utils/gymRole";
 
 const { Sider } = Layout;
 
@@ -48,42 +54,25 @@ interface MenuItem {
 
 const mainMenuItems: MenuItem[] = [
   { key: "Dashboard", label: "Dashboard", icon: <HomeOutlined />, route: "/pages/dashboard" },
-  { key: "PledgeMaster", label: "Pledge Master", icon: <FileTextOutlined />, route: "/pages/pledge-master" },
-  { key: "DailyRegister", label: "Daily Register", icon: <AccountBookOutlined />, route: "/pages/daily-register" },
+  { key: "Branches", label: "Branches", icon: <BankOutlined />, route: "/pages/branches" },
+  { key: "GymMembers", label: "Members", icon: <TeamOutlined />, route: "/pages/members" },
+  { key: "Billing", label: "Billing", icon: <MoneyCollectOutlined />, route: "/pages/billing" },
   {
-    key: "Reports",
-    label: "Reports",
-    icon: <BarChartOutlined />,
-    children: [
-      { key: "BalanceSheet", label: "Balance Sheet", route: "/pages/balance-sheet", icon: <AccountBookOutlined /> },
-      { key: "ProfitLoss", label: "Profit and Loss", route: "/pages/profit-loss", icon: <RiseOutlined /> },
-      { key: "AllLogs", label: "All Logs", route: "/pages/all-logs", icon: <HistoryOutlined /> }
-    ]
+    key: "Finance",
+    label: "Financial Overview",
+    icon: <FundOutlined />,
+    route: "/pages/finance"
   },
-  { key: "BankDetails", label: "Bank & Cash Registers", icon: <BankOutlined />, route: "/pages/bank-details" },
+  { key: "Expenses", label: "Expenses", icon: <WalletOutlined />, route: "/pages/expenses" },
   {
-    key: "Parties",
-    label: "Parties",
-    icon: <UserOutlined />,
-    children: [
-      { key: "Customers", label: "Customers", route: "/pages/customers", icon: <UserOutlined /> },
-      { key: "Vendors", label: "Vendors", route: "/pages/vendors", icon: <ShopOutlined /> },
-      { key: "Employees", label: "Employees", route: "/pages/employees", icon: <TeamOutlined /> },
-      { key: "OwnersAndShareholders", label: "Owners & Shareholders", route: "/pages/owners-shareholders", icon: <CrownOutlined /> }
-    ]
+    key: "StaffManager",
+    label: "Staff/Manager",
+    icon: <UserAddOutlined />,
+    route: "/pages/staff-manager"
   },
-  {
-    key: "Accounting",
-    label: "Accounting",
-    icon: <CalculatorOutlined />,
-    children: [
-      { key: "ChartOfAccounts", label: "Chart Of Accounts", route: "/pages/chart-of-accounts", icon: <AccountBookOutlined /> },
-      { key: "Expenses", label: "Expenses", route: "/pages/expenses", icon: <MoneyCollectOutlined /> },
-      { key: "Payments", label: "Payments", route: "/pages/payments", icon: <CreditCardOutlined /> },
-      { key: "Receipts", label: "Receipts", route: "/pages/receipts", icon: <FileTextOutlined /> },
-      { key: "AssetManagement", label: "Asset Management", route: "/pages/tracked-items", icon: <AppstoreOutlined /> }
-    ]
-  },
+
+  
+
   { key: "Settings", label: "Settings", icon: <SettingOutlined />, route: "/pages/settings" }
 ];
 
@@ -138,18 +127,32 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
   const pathname = usePathname();
   const router = useRouter();
   const { token } = theme.useToken();
+  const session = useAppSelector(selectSession);
 
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [openKeys, setOpenKeys] = useState<string[]>([]);
   const [showSettingsOnly, setShowSettingsOnly] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
+  const mainMenuItemsFiltered = useMemo(() => {
+    const role = gymMembershipRoleFromSession(session);
+    if (role === "staff") {
+      return mainMenuItems.filter(
+        (item) => item.key !== "StaffManager" && item.key !== "Branches"
+      );
+    }
+    if (role === "manager") {
+      return mainMenuItems.filter((item) => item.key !== "Branches");
+    }
+    return mainMenuItems;
+  }, [session]);
+
   const routeMap = useMemo(() => {
     const map: Record<string, string> = {};
-    flattenRoutes(mainMenuItems, map);
+    flattenRoutes(mainMenuItemsFiltered, map);
     flattenRoutes(settingsMenuItems, map);
     return map;
-  }, []);
+  }, [mainMenuItemsFiltered]);
 
   useEffect(() => {
     const matched = Object.entries(routeMap).find(([, route]) => route === pathname);
@@ -185,7 +188,7 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
     onCollapseChange?.(nextCollapsed);
   };
 
-  const menuData = showSettingsOnly ? toMenuData(settingsMenuItems) : toMenuData(mainMenuItems);
+  const menuData = showSettingsOnly ? toMenuData(settingsMenuItems) : toMenuData(mainMenuItemsFiltered);
 
   return (
     <Sider
@@ -196,7 +199,7 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
         top: appBarHeight,
         bottom: 0,
         borderRight: `1px solid ${token.colorBorder}`,
-        background: "#f5f5f5",
+        background: token.colorBgContainer,
         overflowY: "auto",
         overflowX: "hidden",
         transition: "width 0.3s ease"
@@ -208,7 +211,7 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
         openKeys={openKeys}
         onOpenChange={(keys) => setOpenKeys(keys)}
         onClick={handleClick}
-        style={{ height: "calc(100% - 80px)", borderRight: 0, background: "#f5f5f5" }}
+        style={{ height: "calc(100% - 80px)", borderRight: 0, background: token.colorBgContainer }}
         items={menuData}
       />
       <div
@@ -218,7 +221,7 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
           left: 0,
           right: 0,
           padding: "16px",
-          background: "#f5f5f5",
+          background: token.colorBgContainer,
           borderTop: `1px solid ${token.colorBorder}`
         }}
       >

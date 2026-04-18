@@ -18,3 +18,8 @@ a {
   color: inherit;
   text-decoration: none;
 }
+
+/* AppBar branch Select: no hard border on panel (shadow only) */
+.appbar-branch-select-popup.ant-select-dropdown {
+  border: none !important;
+}

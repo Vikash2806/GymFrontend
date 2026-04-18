@@ -1,0 +1,370 @@
+/* Auth shell: Row/Col layout + Ant Design form overrides + autofill fix */
+
+.authRoot {
+  position: relative;
+  min-height: 100vh;
+  color-scheme: dark;
+  color: #f5f8ff;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(55, 109, 255, 0.15), transparent 34%),
+    radial-gradient(circle at 80% 10%, rgba(93, 70, 255, 0.12), transparent 40%),
+    #040712;
+}
+
+.authRow {
+  min-height: 100vh;
+  margin: 0 !important;
+}
+
+.gridOverlay {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(71, 87, 130, 0.22) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(71, 87, 130, 0.22) 1px, transparent 1px);
+  background-size: 32px 32px;
+  opacity: 0.22;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.leftCol {
+  position: relative;
+  z-index: 1;
+  padding: 32px 40px 28px;
+  display: flex;
+  flex-direction: column;
+}
+
+.rightCol {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 28px 36px;
+}
+
+.brandBlock {
+  margin-bottom: 10vh;
+}
+
+.brandTopLine {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: #f5f8ff;
+}
+
+.brandName {
+  font-size: 19px !important;
+  color: #ffffff !important;
+}
+
+.brandSubtle {
+  color: #b4bfd9 !important;
+  font-weight: 600 !important;
+  font-size: 15px !important;
+}
+
+.brandHelper {
+  margin: 10px 0 0 !important;
+  color: #a8b6d6 !important;
+  font-size: 15px !important;
+}
+
+.brandIcon {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: linear-gradient(160deg, #4f78ff, #7f5dff);
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.welcomeBlock {
+  max-width: 580px;
+  margin-top: 5vh;
+}
+
+.heading {
+  margin: 0 !important;
+  font-size: clamp(40px, 4.5vw, 54px) !important;
+  line-height: 1.1 !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.02em !important;
+  color: #f5f8ff !important;
+}
+
+.headingAccent {
+  color: #8aa6ff !important;
+}
+
+.subHeading {
+  margin: 26px 0 0 !important;
+  color: #d0d9f0 !important;
+  font-size: 19px !important;
+  line-height: 1.55 !important;
+  max-width: 620px;
+}
+
+.bulletList {
+  list-style: none;
+  margin: 32px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.bulletList li {
+  color: #e8eefc;
+  font-size: 17px;
+  line-height: 1.45;
+  position: relative;
+  padding-left: 28px;
+}
+
+.bulletList li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 9px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(120deg, #52f5cc, #5ec8ff);
+  box-shadow: 0 0 10px rgba(92, 236, 210, 0.8);
+}
+
+.footerText {
+  margin-top: auto !important;
+  padding-top: 24px;
+  color: #9aa7c2 !important;
+  font-size: 14px !important;
+}
+
+/* Card + Ant Form */
+
+.authCard {
+  width: min(100%, 480px);
+  border-radius: 24px;
+  border: 1px solid rgba(141, 157, 201, 0.2);
+  background: rgba(10, 16, 33, 0.78);
+  box-shadow: 0 32px 70px rgba(0, 0, 0, 0.52);
+  backdrop-filter: blur(18px);
+  padding: 36px 32px 30px;
+}
+
+.cardTitle {
+  margin: 0 !important;
+  font-size: 36px !important;
+  font-weight: 700 !important;
+  line-height: 1.15 !important;
+  color: #ffffff !important;
+}
+
+.cardDescription {
+  display: block;
+  margin: 12px 0 26px !important;
+  color: #c4cee8 !important;
+  font-size: 16px !important;
+  line-height: 1.5 !important;
+}
+
+.authForm :global(.ant-form-item-label > label) {
+  font-size: 15px !important;
+  font-weight: 500 !important;
+  color: #eef3ff !important;
+  height: auto !important;
+}
+
+.sectionLabel {
+  display: block;
+  margin-bottom: 14px !important;
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  color: #e8edfb !important;
+}
+
+.signupSteps {
+  margin: 20px 0 24px !important;
+}
+
+.signupSteps :global(.ant-steps-item-title) {
+  font-size: 14px !important;
+  color: #c8d4ea !important;
+}
+
+.signupSteps :global(.ant-steps-item-active .ant-steps-item-title) {
+  color: #f5f8ff !important;
+}
+
+.inputIcon {
+  color: #8b97b8 !important;
+  font-size: 16px !important;
+}
+
+.submitItem {
+  margin-bottom: 0 !important;
+  margin-top: 8px !important;
+}
+
+.helperRowAnt {
+  margin: -6px 0 10px !important;
+}
+
+.helperMuted {
+  font-size: 14px !important;
+  color: #a8b6d6 !important;
+}
+
+.helperLink {
+  color: #8fb0ff !important;
+  font-size: 14px !important;
+  font-weight: 500;
+}
+
+.helperLink:hover {
+  color: #b8ccff !important;
+}
+
+.switchWrap {
+  width: 100%;
+  text-align: center;
+  margin-top: 8px;
+}
+
+.switchText {
+  font-size: 15px !important;
+  color: #b8c4df !important;
+}
+
+/* +91 + mobile: Space.Compact (replaces deprecated Input addonBefore) */
+
+.mobileCompact {
+  width: 100%;
+}
+
+.mobileCompact :global(.ant-form-item) {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0 !important;
+}
+
+.mobilePrefix {
+  width: 72px !important;
+  flex-shrink: 0 !important;
+  text-align: center !important;
+  font-weight: 600 !important;
+  font-size: 15px !important;
+  color: #dde6fb !important;
+  background: rgba(20, 28, 51, 0.92) !important;
+  border-color: rgba(143, 160, 205, 0.28) !important;
+  cursor: default !important;
+}
+
+.mobileInputMain {
+  width: 100% !important;
+}
+
+/* Ant Design inputs: dark surface + readable text */
+
+.authRoot :global(.ant-input-outlined),
+.authRoot :global(.ant-input-affix-wrapper) {
+  background: rgba(20, 28, 51, 0.92) !important;
+  border-color: rgba(143, 160, 205, 0.28) !important;
+}
+
+.authRoot :global(.ant-input-outlined input),
+.authRoot :global(.ant-input-affix-wrapper input) {
+  font-size: 16px !important;
+  color: #f5f8ff !important;
+}
+
+.authRoot :global(.ant-input-outlined input::placeholder),
+.authRoot :global(.ant-input-affix-wrapper input::placeholder) {
+  color: #8b97b8 !important;
+}
+
+.authRoot :global(.ant-input-group-addon) {
+  background: rgba(20, 28, 51, 0.92) !important;
+  color: #dde6fb !important;
+  font-size: 15px !important;
+  font-weight: 600;
+  border-color: rgba(143, 160, 205, 0.28) !important;
+  min-width: 56px;
+  justify-content: center;
+}
+
+.authRoot :global(.ant-input-affix-wrapper-focused),
+.authRoot :global(.ant-input-outlined:focus-within) {
+  border-color: #5077ff !important;
+  box-shadow: 0 0 0 2px rgba(80, 119, 255, 0.28) !important;
+}
+
+.authRoot :global(.ant-input-password-icon) {
+  color: #a8b6d6 !important;
+}
+
+.authRoot :global(.ant-btn-primary) {
+  background: linear-gradient(180deg, #4d7dff, #3e6fff) !important;
+  border: none !important;
+  font-weight: 600 !important;
+}
+
+/* Chrome / Edge autofill: keep dark field + white text */
+
+.authRoot :global(.ant-input:-webkit-autofill),
+.authRoot :global(.ant-input-affix-wrapper input:-webkit-autofill),
+.authRoot :global(.ant-input-outlined input:-webkit-autofill),
+.authRoot :global(.ant-input-affix-wrapper-focused input:-webkit-autofill) {
+  -webkit-box-shadow: 0 0 0 1000px rgba(20, 28, 51, 0.98) inset !important;
+  box-shadow: 0 0 0 1000px rgba(20, 28, 51, 0.98) inset !important;
+  -webkit-text-fill-color: #f5f8ff !important;
+  caret-color: #f5f8ff !important;
+  transition: background-color 99999s ease-out 0s;
+}
+
+@media (max-width: 1199px) {
+  .leftCol {
+    padding-bottom: 12px;
+  }
+
+  .welcomeBlock {
+    margin-top: 28px;
+  }
+
+  .rightCol {
+    align-items: flex-start;
+    padding-top: 8px;
+  }
+}
+
+@media (max-width: 767px) {
+  .leftCol {
+    padding: 24px 20px 12px;
+  }
+
+  .heading {
+    font-size: 34px !important;
+  }
+
+  .subHeading {
+    font-size: 17px !important;
+  }
+
+  .authCard {
+    padding: 28px 22px 24px;
+    border-radius: 20px;
+  }
+
+  .cardTitle {
+    font-size: 30px !important;
+  }
+}

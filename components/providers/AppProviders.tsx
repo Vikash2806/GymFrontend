@@ -1,6 +1,7 @@
 "use client";
 
-import { ConfigProvider, theme as antdTheme } from "antd";
+import "@ant-design/v5-patch-for-react-19";
+import { App, ConfigProvider, theme as antdTheme } from "antd";
 import ReduxProvider from "@/redux/ReduxProvider";
 import { useAppSelector } from "@/redux/hooks";
 
@@ -15,7 +16,7 @@ function ThemeProviderWrapper({ children }: AppProvidersProps) {
           mode === "dark" ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm
       }}
     >
-      {children}
+      <App>{children}</App>
     </ConfigProvider>
   );
 }
