@@ -1,6 +1,17 @@
 import type { Metadata } from "next";
+import { DM_Sans, Inter } from "next/font/google";
 import "./globals.css";
 import { AppProviders } from "@/components/providers/AppProviders";
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter"
+});
+
+const dmSans = DM_Sans({
+  subsets: ["latin"],
+  variable: "--font-display"
+});
 
 export const metadata: Metadata = {
   title: "Gym ERP",
@@ -12,7 +23,7 @@ type RootLayoutProps = Readonly<{ children: React.ReactNode }>;
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html lang="en">
-      <body>
+      <body className={`${inter.variable} ${dmSans.variable}`}>
         <AppProviders>{children}</AppProviders>
       </body>
     </html>

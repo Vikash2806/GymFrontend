@@ -23,6 +23,7 @@ import {
   WalletOutlined
 } from "@ant-design/icons";
 import apiClient from "@/utils/api";
+import { formatInr } from "@/utils/formatCurrency";
 import type { FinanceOverviewPayload, FinanceOverviewResponse } from "@/types/finance";
 import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
@@ -38,10 +39,6 @@ const RevenueTrendChart = dynamic(() => import("./RevenueTrendChart"), {
 });
 
 const { Title, Text } = Typography;
-
-function formatInr(n: number): string {
-  return `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
 
 const MONTHS: { value: number; label: string }[] = [
   { value: 1, label: "January" },

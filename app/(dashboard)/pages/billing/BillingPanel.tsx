@@ -20,6 +20,7 @@ import type { TableProps } from "antd";
 import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
 import apiClient from "@/utils/api";
+import { formatInr } from "@/utils/formatCurrency";
 import { WIDE_MODAL_WIDTH } from "@/utils/modalWidths";
 import type { Member } from "@/types/member";
 import { useAppSelector } from "@/redux/hooks";
@@ -36,10 +37,6 @@ const tableComponents: TableProps<Member>["components"] = {
     )
   }
 };
-
-function formatInr(n: number): string {
-  return `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
 
 type ListResponse = { success: boolean; members?: Member[]; message?: string };
 

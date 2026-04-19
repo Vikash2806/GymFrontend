@@ -1,25 +1,13 @@
 "use client";
 
-import { Card, Statistic, Row, Col } from "antd";
+import React from "react";
+import { Card } from "antd";
+import DashboardPanel from "./DashboardPanel";
 
 export default function DashboardPage() {
   return (
-    <Row gutter={[16, 16]}>
-      <Col xs={24} md={8}>
-        <Card>
-          <Statistic title="Total Members" value={128} />
-        </Card>
-      </Col>
-      <Col xs={24} md={8}>
-        <Card>
-          <Statistic title="Active Plans" value={63} />
-        </Card>
-      </Col>
-      <Col xs={24} md={8}>
-        <Card>
-          <Statistic title="Today's Check-ins" value={41} />
-        </Card>
-      </Col>
-    </Row>
+    <Card styles={{ body: { paddingTop: 16 } }}>
+      <DashboardPanel />
+    </Card>
   );
 }

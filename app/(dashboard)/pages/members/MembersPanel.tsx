@@ -47,6 +47,7 @@ import type { MembershipPlan } from "@/types/membership";
 import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
 import { stripToIndianMobileDigits } from "@/utils/mobileValidation";
+import { formatInrWhole } from "@/utils/formatCurrency";
 
 const { Title, Text } = Typography;
 
@@ -59,10 +60,6 @@ const tableComponents: TableProps<Member>["components"] = {
     )
   }
 };
-
-function formatInr(n: number): string {
-  return `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-}
 
 function formatDisplayDate(iso: string | undefined): string {
   if (!iso) {
@@ -114,7 +111,7 @@ function billingCell(m: Member, token: { colorWarning: string }) {
     <Space direction="vertical" size={0}>
       <Space size={4}>
         <ClockCircleOutlined style={{ color: token.colorWarning }} />
-        <Text>{formatInr(p.pendingAmount)}</Text>
+        <Text>{formatInrWhole(p.pendingAmount)}</Text>
       </Space>
       <Text type="secondary" style={{ fontSize: 12 }}>
         {endLabel}
@@ -701,7 +698,7 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
               </Descriptions.Item>
               <Descriptions.Item label="Total Amount (₹)">
                 {detailMember.currentSubscription
-                  ? formatInr(detailMember.currentSubscription.payment.totalAmount)
+                  ? formatInrWhole(detailMember.currentSubscription.payment.totalAmount)
                   : "—"}
               </Descriptions.Item>
               <Descriptions.Item label="Start Date">
@@ -712,13 +709,13 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
               </Descriptions.Item>
               <Descriptions.Item label="Paid Amount (₹)">
                 {detailMember.currentSubscription
-                  ? formatInr(detailMember.currentSubscription.payment.paidAmount)
+                  ? formatInrWhole(detailMember.currentSubscription.payment.paidAmount)
                   : "—"}
               </Descriptions.Item>
               <Descriptions.Item label="Outstanding Amount (₹)">
                 <Text type="danger">
                   {detailMember.currentSubscription
-                    ? formatInr(detailMember.currentSubscription.payment.pendingAmount)
+                    ? formatInrWhole(detailMember.currentSubscription.payment.pendingAmount)
                     : "—"}
                 </Text>
               </Descriptions.Item>

@@ -9,21 +9,20 @@ import {
   XAxis,
   YAxis
 } from "recharts";
+import { formatInr } from "@/utils/formatCurrency";
 
 export type RevenueChartPoint = { day: number; label: string; amount: number };
-
-function formatInr(n: number): string {
-  return `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
 
 type Props = {
   chartData: RevenueChartPoint[];
   gridStroke: string;
+  /** Chart height in px (default 300). */
+  height?: number;
 };
 
-export default function RevenueTrendChart({ chartData, gridStroke }: Props) {
+export default function RevenueTrendChart({ chartData, gridStroke, height = 300 }: Props) {
   return (
-    <div style={{ width: "100%", height: 300 }}>
+    <div style={{ width: "100%", height }}>
       <ResponsiveContainer>
         <AreaChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
           <defs>

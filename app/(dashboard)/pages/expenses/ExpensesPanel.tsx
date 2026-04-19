@@ -32,12 +32,9 @@ import type {
 import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
 import { gymMembershipRoleFromSession } from "@/utils/gymRole";
+import { formatInr } from "@/utils/formatCurrency";
 
 const { Title, Text } = Typography;
-
-function formatInr(n: number): string {
-  return `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
 
 const MONTHS: { value: number; label: string }[] = [
   { value: 1, label: "January" },
