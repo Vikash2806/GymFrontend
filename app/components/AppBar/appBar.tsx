@@ -90,13 +90,19 @@ interface CustomAppBarProps {
   onHeightChange: (height: number) => void;
 }
 
-const searchCategories: MenuProps["items"] = [
-  { key: "Customers", label: "Customers" },
-  { key: "Employees", label: "Employees" },
-  { key: "Vendors", label: "Vendors" },
-  { key: "Pay and Close", label: "Pay and Close" },
-  { key: "Pay Advance", label: "Pay Advance" },
-  { key: "Transfer Pledge", label: "Transfer Pledge" }
+type SearchCategory = {
+  key: string;
+  label: string;
+  route: string;
+};
+
+const searchCategories: SearchCategory[] = [
+  { key: "Dashboard", label: "Dashboard", route: "/pages/dashboard" },
+  { key: "Members", label: "Members", route: "/pages/members" },
+  { key: "Billing", label: "Billing", route: "/pages/billing" },
+  { key: "Branches", label: "Branches", route: "/pages/branches" },
+  { key: "StaffManager", label: "Staff / Manager", route: "/pages/staff-manager" },
+  { key: "Settings", label: "Settings", route: "/pages/settings" }
 ];
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -121,7 +127,7 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
   const dispatch = useAppDispatch();
   const router = useRouter();
 
-  const [selectedCategory, setSelectedCategory] = useState("Customers");
+  const [selectedCategory, setSelectedCategory] = useState(searchCategories[0]?.key ?? "Dashboard");
   const [searchValue, setSearchValue] = useState("");
   const [gymModalOpen, setGymModalOpen] = useState(false);
   const [gymForm] = Form.useForm<{ name: string }>();
@@ -146,19 +152,8 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
   }, [gymModalOpen, gym, gymForm]);
 
   const handleSearch = () => {
-    if (selectedCategory === "Customers") {
-      router.push("/pages/customers");
-      return;
-    }
-    if (selectedCategory === "Employees") {
-      router.push("/pages/employees");
-      return;
-    }
-    if (selectedCategory === "Vendors") {
-      router.push("/pages/vendors");
-      return;
-    }
-    router.push("/pages/dashboard");
+    const selected = searchCategories.find((item) => item.key === selectedCategory);
+    router.push(selected?.route ?? "/pages/dashboard");
   };
 
   const onProfileMenuClick: MenuProps["onClick"] = async ({ key }) => {
@@ -177,7 +172,7 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
     { key: "logout", label: "Logout", icon: <LogoutOutlined /> }
   ];
 
-  const displayName = gym?.name ?? "FitForge";
+  const displayName = gym?.name ?? "Gym Admin";
   const initials =
     session?.user?.fullName
       ?.split(" ")
@@ -384,7 +379,7 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
               padding: 0
             }}
           >
-            {gym ? "Gym owner workspace" : "by CodingRoof"}
+            {gym ? "Gym owner workspace" : "Gym management workspace"}
           </Text>
         </Flex>
       </Flex>
@@ -402,7 +397,7 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
         >
           <Dropdown
             menu={{
-              items: searchCategories,
+              items: searchCategories.map((item) => ({ key: item.key, label: item.label })),
               onClick: ({ key }) => setSelectedCategory(key)
             }}
             trigger={["click"]}

@@ -26,6 +26,7 @@ import { WIDE_MODAL_WIDTH } from "@/utils/modalWidths";
 import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
 import { canAccessStaffUsersModule, gymMembershipRoleFromSession } from "@/utils/gymRole";
+import { FEATURES, hasFeature } from "@/utils/permissions";
 import { isValidIndianMobile, stripToIndianMobileDigits, toE164IndianMobile } from "@/utils/mobileValidation";
 import { normalizeOptionalEmail } from "@/utils/emailValidation";
 import type { StaffUserMutationResponse, StaffUserRow, StaffUsersListResponse } from "@/types/staffUser";
@@ -90,6 +91,8 @@ export default function StaffManagerPanel() {
   const [form] = Form.useForm<FormValues>();
 
   const canAccess = canAccessStaffUsersModule(session);
+  const canCreateStaff = hasFeature(session, FEATURES.STAFF_MANAGEMENT);
+  const canUpdateStaff = hasFeature(session, FEATURES.STAFF_MANAGEMENT);
 
   useEffect(() => {
     if (!canAccess) {
@@ -98,10 +101,10 @@ export default function StaffManagerPanel() {
   }, [canAccess, router]);
 
   useEffect(() => {
-    if (defaultBranchId && !branchFilter) {
+    if (membershipRole === "manager" && defaultBranchId && !branchFilter) {
       setBranchFilter(defaultBranchId);
     }
-  }, [defaultBranchId, branchFilter]);
+  }, [defaultBranchId, branchFilter, membershipRole]);
 
   const load = useCallback(async () => {
     if (!canAccess) {
@@ -320,7 +323,13 @@ export default function StaffManagerPanel() {
       fixed: "right",
       render: (_, record) => (
         <Space>
-          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(record)}>
+          <Button
+            type="link"
+            size="small"
+            icon={<EditOutlined />}
+            onClick={() => openEdit(record)}
+            disabled={!canUpdateStaff}
+          >
             Edit
           </Button>
           <Popconfirm
@@ -330,7 +339,7 @@ export default function StaffManagerPanel() {
             cancelText="Cancel"
             onConfirm={() => void onDelete(record)}
           >
-            <Button type="link" size="small" danger icon={<DeleteOutlined />}>
+            <Button type="link" size="small" danger icon={<DeleteOutlined />} disabled={!canUpdateStaff}>
               Delete
             </Button>
           </Popconfirm>
@@ -377,7 +386,7 @@ export default function StaffManagerPanel() {
               label: `${b.code} — ${b.name}`
             }))}
           />
-          <Button type="primary" icon={<UserAddOutlined />} onClick={openCreate}>
+          <Button type="primary" icon={<UserAddOutlined />} onClick={openCreate} disabled={!canCreateStaff}>
             Create User
           </Button>
         </Space>

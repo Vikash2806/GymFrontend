@@ -1,6 +1,6 @@
 export type SessionAssociatedGym = {
   gymId: string;
-  gymRole: "owner" | "manager" | "staff";
+  gymRole?: "owner" | "manager" | "staff";
   isActive?: boolean;
   branches?: Array<{ branchId: string; role: string }>;
   lastLogin?: string;
@@ -36,6 +36,10 @@ export type SessionPayload = {
   user: SessionUser;
   gym: SessionGym | null;
   activeBranch: SessionGymBranch | null;
+  rbac?: {
+    role: string;
+    permissions: string[];
+  } | null;
 };
 
 /** Legacy localStorage shape (pre-gym). */

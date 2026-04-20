@@ -331,7 +331,7 @@ export default function BillingPanel() {
         okText="Submit payment"
         okButtonProps={{ type: "primary", loading: submitting }}
         onOk={() => void submitPayment()}
-        destroyOnClose
+        destroyOnHidden
         width={WIDE_MODAL_WIDTH}
       >
         {payingMember?.currentSubscription ? (

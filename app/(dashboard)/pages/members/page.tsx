@@ -6,6 +6,8 @@ import { UserOutlined, IdcardOutlined } from "@ant-design/icons";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import MembershipPlansPanel from "./MembershipPlansPanel";
 import MembersPanel from "./MembersPanel";
+import RbacPermissionGuard from "@/app/components/Auth/RbacPermissionGuard";
+import { FEATURES } from "@/utils/permissions";
 
 function MembersPageContent() {
   const [memberCount, setMemberCount] = useState(0);
@@ -69,7 +71,9 @@ export default function MembersPage() {
         </Card>
       }
     >
-      <MembersPageContent />
+      <RbacPermissionGuard permission={FEATURES.MEMBER_MANAGEMENT}>
+        <MembersPageContent />
+      </RbacPermissionGuard>
     </Suspense>
   );
 }

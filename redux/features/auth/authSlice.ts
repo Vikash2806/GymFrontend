@@ -5,9 +5,7 @@ import { isValidIndianMobile, toE164IndianMobile } from "@/utils/mobileValidatio
 import type {
   LegacyUserData,
   SessionGymBranch,
-  SessionPayload,
-  SessionGym,
-  SessionUser
+  SessionPayload
 } from "./sessionTypes";
 
 type LoginPayload = {
@@ -75,34 +73,6 @@ export const loginAsync = createAsyncThunk<SessionPayload, LoginPayload>(
       return rejectWithValue("Please enter a valid mobile number");
     }
 
-    const useMockAuth = process.env.NEXT_PUBLIC_ENABLE_MOCK_AUTH !== "false";
-
-    if (useMockAuth) {
-      if (normalizedMobile.trim().length > 0 && credentials.password.trim().length > 0) {
-        const mockUser: SessionUser = {
-          id: "mock-user",
-          email: null,
-          phone: normalizedMobile,
-          fullName: "Demo User",
-          profilePhoto: null,
-          defaults: { gymId: "mock-gym", branchId: "mock-branch" }
-        };
-        const mockGym: SessionGym = {
-          id: "mock-gym",
-          name: "Demo Gym",
-          logoUrl: null,
-          branches: [{ id: "mock-branch", code: "BR001", name: "Main Branch" }]
-        };
-        return {
-          token: "mock-token",
-          user: mockUser,
-          gym: mockGym,
-          activeBranch: mockGym.branches[0]
-        };
-      }
-      return rejectWithValue("Invalid credentials");
-    }
-
     try {
       const response = await apiClient.post<SessionPayload>("/auth/signin", {
         mobileNumber: normalizedMobile,
@@ -127,38 +97,6 @@ export const signupAsync = createAsyncThunk<SessionPayload, SignupPayload>(
       return rejectWithValue("Please enter a valid mobile number");
     }
 
-    const useMockAuth = process.env.NEXT_PUBLIC_ENABLE_MOCK_AUTH !== "false";
-    if (useMockAuth) {
-      if (
-        payload.firstName.trim().length === 0 ||
-        payload.lastName.trim().length === 0 ||
-        payload.password.trim().length < 6 ||
-        !payload.gymName.trim()
-      ) {
-        return rejectWithValue("Please enter valid details");
-      }
-      const mockUser: SessionUser = {
-        id: "mock-user",
-        email: payload.recoveryEmail?.trim() || null,
-        phone: normalizedMobile,
-        fullName: `${payload.firstName} ${payload.lastName}`.trim(),
-        profilePhoto: null,
-        defaults: { gymId: "mock-gym", branchId: "mock-branch" }
-      };
-      const mockGym: SessionGym = {
-        id: "mock-gym",
-        name: payload.gymName.trim(),
-        logoUrl: payload.gymLogo,
-        branches: [{ id: "mock-branch", code: "BR001", name: "Main Branch" }]
-      };
-      return {
-        token: "mock-token",
-        user: mockUser,
-        gym: mockGym,
-        activeBranch: mockGym.branches[0]
-      };
-    }
-
     try {
       const response = await apiClient.post<SessionPayload>("/auth/signup", {
         firstName: payload.firstName,
@@ -181,9 +119,10 @@ export const signupAsync = createAsyncThunk<SessionPayload, SignupPayload>(
 );
 
 export const logoutAsync = createAsyncThunk("users/logout", async () => {
-  const useMockAuth = process.env.NEXT_PUBLIC_ENABLE_MOCK_AUTH !== "false";
-  if (!useMockAuth) {
+  try {
     await apiClient.post("/auth/logout");
+  } catch {
+    // Local auth state is still cleared in fulfilled reducer.
   }
   return true;
 });

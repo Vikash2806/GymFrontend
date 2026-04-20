@@ -48,6 +48,7 @@ import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
 import { stripToIndianMobileDigits } from "@/utils/mobileValidation";
 import { formatInrWhole } from "@/utils/formatCurrency";
+import { FEATURES, hasFeature } from "@/utils/permissions";
 
 const { Title, Text } = Typography;
 
@@ -149,6 +150,9 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
   const { message } = App.useApp();
   const { token } = theme.useToken();
   const session = useAppSelector(selectSession);
+  const canCreateMember = hasFeature(session, FEATURES.MEMBER_MANAGEMENT);
+  const canUpdateMember = hasFeature(session, FEATURES.MEMBER_MANAGEMENT);
+  const canDeleteMember = hasFeature(session, FEATURES.MEMBER_MANAGEMENT);
   const defaultBranchId = session?.activeBranch?.id ?? session?.user?.defaults?.branchId ?? "";
 
   const [loading, setLoading] = useState(false);
@@ -579,11 +583,18 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
                 icon={<EditOutlined />}
                 onClick={() => void openEdit(record)}
                 aria-label="Edit member"
+                disabled={!canUpdateMember}
               />
             </Tooltip>
             <Popconfirm title="Delete this member?" okText="Delete" okButtonProps={{ danger: true }} onConfirm={() => void handleDelete(record)}>
               <Tooltip title="Delete">
-                <Button type="text" danger icon={<DeleteOutlined />} aria-label="Delete member" />
+                <Button
+                  type="text"
+                  danger
+                  icon={<DeleteOutlined />}
+                  aria-label="Delete member"
+                  disabled={!canDeleteMember}
+                />
               </Tooltip>
             </Popconfirm>
           </Space>
@@ -629,7 +640,7 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
           <Button icon={<ReloadOutlined />} onClick={() => void loadMembers()}>
             Refresh
           </Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} disabled={!canCreateMember}>
             Add member
           </Button>
         </Space>

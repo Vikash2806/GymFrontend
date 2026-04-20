@@ -4,29 +4,13 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Layout, Menu, theme, Button, Tooltip } from "antd";
 import {
   HomeOutlined,
-  FileTextOutlined,
-  DollarOutlined,
-  BarChartOutlined,
-  AccountBookOutlined,
-  UserOutlined,
-  ProfileOutlined,
   SettingOutlined,
   ArrowLeftOutlined,
   ArrowRightOutlined,
   BankOutlined,
-  DatabaseOutlined,
   TeamOutlined,
   ShopOutlined,
-  CrownOutlined,
-  CalculatorOutlined,
   MoneyCollectOutlined,
-  CreditCardOutlined,
-  AppstoreOutlined,
-  HistoryOutlined,
-  SafetyOutlined,
-  EnvironmentOutlined,
-  RiseOutlined,
-  SafetyCertificateOutlined,
   UserAddOutlined,
   FundOutlined,
   WalletOutlined
@@ -35,7 +19,7 @@ import { usePathname, useRouter } from "next/navigation";
 import type { MenuProps } from "antd";
 import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
-import { gymMembershipRoleFromSession } from "@/utils/gymRole";
+import { FEATURES, hasFeature } from "@/utils/permissions";
 
 const { Sider } = Layout;
 
@@ -70,39 +54,14 @@ const mainMenuItems: MenuItem[] = [
     icon: <UserAddOutlined />,
     route: "/pages/staff-manager"
   },
-
-  
+  { key: "RbacAdmin", label: "Role Master", icon: <SettingOutlined />, route: "/admin/rbac" },
 
   { key: "Settings", label: "Settings", icon: <SettingOutlined />, route: "/pages/settings" }
 ];
 
 const settingsMenuItems: MenuItem[] = [
   { key: "Back", label: "Settings", icon: <ArrowLeftOutlined /> },
-  {
-    key: "Organization",
-    label: "Organization",
-    icon: <ProfileOutlined />,
-    children: [
-      { key: "UserProfile", label: "User Profile", icon: <UserOutlined />, route: "/pages/settings/profile/user-profile" },
-      { key: "CompanyDetails", label: "Company Details", icon: <BankOutlined />, route: "/pages/settings" },
-      { key: "AllUsersRoles", label: "All Users/Roles", icon: <TeamOutlined />, route: "/pages/settings/profile/users-roles" },
-      { key: "AccountActions", label: "Account Actions", icon: <SafetyOutlined />, route: "/pages/settings/profile/account-actions" },
-      { key: "ManageSubscription", label: "Manage Subscription", icon: <CreditCardOutlined />, route: "/pages/settings/profile/subscription" },
-      { key: "OpeningBalance", label: "Opening Balance", icon: <DatabaseOutlined />, route: "/pages/settings/profile/opening-balance" },
-      { key: "YearEndClosing", label: "Year End Closing", icon: <SafetyCertificateOutlined />, route: "/pages/settings/profile/year-end" }
-    ]
-  },
-  {
-    key: "Master",
-    label: "Master",
-    icon: <SettingOutlined />,
-    children: [
-      { key: "AreaMaster", label: "Area Master", icon: <EnvironmentOutlined />, route: "/pages/settings/master/area-master" },
-      { key: "GramPriceMaster", label: "Gram Price Master", icon: <DollarOutlined />, route: "/pages/settings/master/gram-master" },
-      { key: "InterestSlabConfig", label: "Interest Slab Config", icon: <RiseOutlined />, route: "/pages/settings/master/interest-slab-config" },
-      { key: "PrefixMaster", label: "Voucher Prefix Master", icon: <FileTextOutlined />, route: "/pages/settings/master/prefix-master" }
-    ]
-  }
+  { key: "GymSettings", label: "Gym Settings", icon: <ShopOutlined />, route: "/pages/settings" }
 ];
 
 const flattenRoutes = (items: MenuItem[], map: Record<string, string>) => {
@@ -135,16 +94,36 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
   const [collapsed, setCollapsed] = useState(false);
 
   const mainMenuItemsFiltered = useMemo(() => {
-    const role = gymMembershipRoleFromSession(session);
-    if (role === "staff") {
-      return mainMenuItems.filter(
-        (item) => item.key !== "StaffManager" && item.key !== "Branches"
-      );
-    }
-    if (role === "manager") {
-      return mainMenuItems.filter((item) => item.key !== "Branches");
-    }
-    return mainMenuItems;
+    return mainMenuItems.filter((item) => {
+      if (item.key === "Dashboard") {
+        return hasFeature(session, FEATURES.DASHBOARD);
+      }
+      if (item.key === "StaffManager") {
+        return hasFeature(session, FEATURES.STAFF_MANAGEMENT);
+      }
+      if (item.key === "Branches") {
+        return hasFeature(session, FEATURES.BRANCH_MANAGEMENT);
+      }
+      if (item.key === "GymMembers") {
+        return hasFeature(session, FEATURES.MEMBER_MANAGEMENT);
+      }
+      if (item.key === "Billing") {
+        return hasFeature(session, FEATURES.BILLING_DASHBOARD);
+      }
+      if (item.key === "Finance") {
+        return hasFeature(session, FEATURES.FINANCIAL_OVERVIEW);
+      }
+      if (item.key === "RbacAdmin") {
+        return hasFeature(session, FEATURES.RBAC_SETTINGS);
+      }
+      if (item.key === "Expenses") {
+        return hasFeature(session, FEATURES.EXPENSES);
+      }
+      if (item.key === "Settings") {
+        return hasFeature(session, FEATURES.SETTINGS);
+      }
+      return true;
+    });
   }, [session]);
 
   const routeMap = useMemo(() => {
@@ -173,7 +152,7 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
     }
     if (e.key === "Back") {
       setShowSettingsOnly(false);
-      router.push("/pages/customers");
+      router.push("/pages/dashboard");
       return;
     }
     const route = routeMap[e.key];
