@@ -32,6 +32,8 @@ import {
   WalletOutlined
 } from "@ant-design/icons";
 import { usePathname, useRouter } from "next/navigation";
+import Link from "next/link";
+import { startTransition } from "react";
 import type { MenuProps } from "antd";
 import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
@@ -46,7 +48,7 @@ interface SidebarProps {
 
 interface MenuItem {
   key: string;
-  label: string;
+  label: React.ReactNode;
   icon?: React.ReactNode;
   route?: string;
   children?: MenuItem[];
@@ -120,7 +122,17 @@ const toMenuData = (items: MenuItem[]): NonNullable<MenuProps["items"]> =>
   items.map((item) =>
     item.children
       ? { key: item.key, icon: item.icon, label: item.label, children: toMenuData(item.children) }
-      : { key: item.key, icon: item.icon, label: item.label }
+      : {
+          key: item.key,
+          icon: item.icon,
+          label: item.route ? (
+            <Link href={item.route} prefetch style={{ display: "block", width: "100%" }}>
+              {item.label}
+            </Link>
+          ) : (
+            item.label
+          )
+        }
   );
 
 export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps) {
@@ -168,17 +180,21 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
     setSelectedKeys([e.key]);
     if (e.key === "Settings") {
       setShowSettingsOnly(true);
-      router.push("/pages/settings");
+      if (pathname !== "/pages/settings") {
+        startTransition(() => {
+          router.push("/pages/settings");
+        });
+      }
       return;
     }
     if (e.key === "Back") {
       setShowSettingsOnly(false);
-      router.push("/pages/customers");
+      if (pathname !== "/pages/dashboard") {
+        startTransition(() => {
+          router.push("/pages/dashboard");
+        });
+      }
       return;
-    }
-    const route = routeMap[e.key];
-    if (route) {
-      router.push(route);
     }
   };
 

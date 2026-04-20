@@ -390,7 +390,7 @@ export default function BranchesPanel() {
           setModalOpen(false);
           setEditing(null);
         }}
-        destroyOnClose
+        destroyOnHidden
         footer={[
           <Button
             key="cancel"

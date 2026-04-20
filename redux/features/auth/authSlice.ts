@@ -34,6 +34,18 @@ type AuthState = {
   error: string | null;
 };
 
+function isMockAuthEnabled(): boolean {
+  return process.env.NEXT_PUBLIC_ENABLE_MOCK_AUTH === "true";
+}
+
+function isLikelyMockSession(data: unknown): boolean {
+  if (!data || typeof data !== "object") {
+    return false;
+  }
+  const session = data as { token?: string; user?: { id?: string } };
+  return session.token === "mock-token" || session.user?.id === "mock-user";
+}
+
 function parseStoredSession(): UserData | null {
   if (typeof window === "undefined") {
     return null;
@@ -43,7 +55,12 @@ function parseStoredSession(): UserData | null {
     return null;
   }
   try {
-    return JSON.parse(raw) as UserData;
+    const parsed = JSON.parse(raw) as UserData;
+    if (!isMockAuthEnabled() && isLikelyMockSession(parsed)) {
+      localStorage.removeItem("userData");
+      return null;
+    }
+    return parsed;
   } catch {
     return null;
   }
@@ -75,7 +92,7 @@ export const loginAsync = createAsyncThunk<SessionPayload, LoginPayload>(
       return rejectWithValue("Please enter a valid mobile number");
     }
 
-    const useMockAuth = process.env.NEXT_PUBLIC_ENABLE_MOCK_AUTH !== "false";
+    const useMockAuth = isMockAuthEnabled();
 
     if (useMockAuth) {
       if (normalizedMobile.trim().length > 0 && credentials.password.trim().length > 0) {
@@ -127,7 +144,7 @@ export const signupAsync = createAsyncThunk<SessionPayload, SignupPayload>(
       return rejectWithValue("Please enter a valid mobile number");
     }
 
-    const useMockAuth = process.env.NEXT_PUBLIC_ENABLE_MOCK_AUTH !== "false";
+    const useMockAuth = isMockAuthEnabled();
     if (useMockAuth) {
       if (
         payload.firstName.trim().length === 0 ||
@@ -181,7 +198,7 @@ export const signupAsync = createAsyncThunk<SessionPayload, SignupPayload>(
 );
 
 export const logoutAsync = createAsyncThunk("users/logout", async () => {
-  const useMockAuth = process.env.NEXT_PUBLIC_ENABLE_MOCK_AUTH !== "false";
+  const useMockAuth = isMockAuthEnabled();
   if (!useMockAuth) {
     await apiClient.post("/auth/logout");
   }

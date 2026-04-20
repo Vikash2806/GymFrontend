@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Dumbbell,
   Menu,
@@ -118,8 +119,9 @@ const Btn: React.FC<{
   const classes = `${base} ${sizes[size]} ${variants[variant]} ${className}`;
 
   if (href) {
+    const isInternalRoute = href.startsWith("/");
     return (
-      <Link href={href} className={classes} onClick={onClick} style={style}>
+      <Link href={href} prefetch={isInternalRoute} className={classes} onClick={onClick} style={style}>
         {children}
       </Link>
     );
@@ -147,11 +149,19 @@ const navLinks = [
 const Navbar = () => {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const router = useRouter();
+
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener("scroll", onScroll);
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
+
+  useEffect(() => {
+    router.prefetch("/login");
+    router.prefetch("/signup");
+  }, [router]);
+
   return (
     <nav
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
@@ -1746,6 +1756,35 @@ const StickyCtaBar = () => {
 };
 
 export default function FitForgeLandingPage() {
+  useEffect(() => {
+    let cancelled = false;
+
+    const preloadAuthScreens = () => {
+      if (cancelled) {
+        return;
+      }
+      void Promise.allSettled([
+        import("@/app/components/Auth/AuthScreen"),
+        import("@/app/components/Auth/SignInCard"),
+        import("@/app/components/Auth/SignUpCard")
+      ]);
+    };
+
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      const idleId = window.requestIdleCallback(preloadAuthScreens, { timeout: 2000 });
+      return () => {
+        cancelled = true;
+        window.cancelIdleCallback(idleId);
+      };
+    }
+
+    const timer = globalThis.setTimeout(preloadAuthScreens, 350);
+    return () => {
+      cancelled = true;
+      globalThis.clearTimeout(timer);
+    };
+  }, []);
+
   return (
     <div className="fitforge-landing min-h-screen bg-background text-foreground">
       <Navbar />

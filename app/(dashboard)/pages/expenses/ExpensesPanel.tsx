@@ -487,7 +487,7 @@ export default function ExpensesPanel() {
         width={WIDE_DRAWER_WIDTH}
         open={expenseDrawerOpen}
         onClose={() => setExpenseDrawerOpen(false)}
-        destroyOnClose
+        destroyOnHidden
         extra={
           <Space>
             <Button onClick={() => setExpenseDrawerOpen(false)}>Cancel</Button>
@@ -545,7 +545,7 @@ export default function ExpensesPanel() {
         width={WIDE_DRAWER_WIDTH}
         open={categoryDrawerOpen}
         onClose={() => setCategoryDrawerOpen(false)}
-        destroyOnClose
+        destroyOnHidden
         extra={
           <Space>
             <Button onClick={() => setCategoryDrawerOpen(false)}>Cancel</Button>

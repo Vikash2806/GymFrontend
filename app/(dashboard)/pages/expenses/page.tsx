@@ -1,8 +1,18 @@
 "use client";
 
 import React from "react";
-import { Card } from "antd";
-import ExpensesPanel from "./ExpensesPanel";
+import dynamic from "next/dynamic";
+import { Card, Spin } from "antd";
+
+const ExpensesPanel = dynamic(() => import("./ExpensesPanel"), {
+  loading: () => (
+    <Card>
+      <div style={{ display: "flex", justifyContent: "center", padding: 48 }}>
+        <Spin size="large" />
+      </div>
+    </Card>
+  )
+});
 
 export default function ExpensesPage() {
   return (
