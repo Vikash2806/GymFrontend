@@ -483,28 +483,34 @@ export default function StaffManagerPanel() {
               autoComplete="email"
             />
           </Form.Item>
-          <Form.Item
-            name="phone"
-            label="Phone"
-            rules={[
-              { required: true, message: "Required" },
-              {
-                validator: async (_, v) => {
-                  const s = String(v ?? "");
-                  if (!isValidIndianMobile(s)) {
-                    throw new Error("Enter a valid Indian mobile number");
+          <Form.Item label="Phone" required>
+            <Space.Compact style={{ width: "100%" }}>
+              <Input
+                readOnly
+                tabIndex={-1}
+                value="+91"
+                style={{ width: 64, textAlign: "center" }}
+                disabled={Boolean(editing)}
+              />
+              <Form.Item
+                name="phone"
+                noStyle
+                rules={[
+                  { required: true, message: "Required" },
+                  {
+                    validator: async (_, v) => {
+                      const s = String(v ?? "");
+                      if (!isValidIndianMobile(s)) {
+                        throw new Error("Enter a valid Indian mobile number");
+                      }
+                    }
                   }
-                }
-              }
-            ]}
-            getValueFromEvent={(e) => stripToIndianMobileDigits(e.target?.value ?? e)}
-          >
-            <Input
-              placeholder="10-digit mobile"
-              maxLength={10}
-              addonBefore="+91"
-              disabled={Boolean(editing)}
-            />
+                ]}
+                getValueFromEvent={(e) => stripToIndianMobileDigits(e.target?.value ?? e)}
+              >
+                <Input placeholder="10-digit mobile" maxLength={10} disabled={Boolean(editing)} />
+              </Form.Item>
+            </Space.Compact>
           </Form.Item>
           <Form.Item
             name="password"

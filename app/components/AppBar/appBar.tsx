@@ -39,6 +39,7 @@ import { usePathname, useRouter } from "next/navigation";
 import apiClient from "@/utils/api";
 import { WIDE_MODAL_WIDTH } from "@/utils/modalWidths";
 import type { SessionGymBranch, SessionPayload } from "@/redux/features/auth/sessionTypes";
+import { FEATURES, hasFeature } from "@/utils/permissions";
 
 const { Header } = Layout;
 const { Text } = Typography;
@@ -138,6 +139,12 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
   const gym = session?.gym;
   const activeBranch = session?.activeBranch;
   const branches = gym?.branches ?? [];
+  const canManageBranches = hasFeature(session, FEATURES.BRANCH_MANAGEMENT);
+  const assignedBranchId = session?.user?.defaults?.branchId ?? activeBranch?.id ?? "";
+  const visibleBranches = canManageBranches
+    ? branches
+    : branches.filter((branch) => branch.id === assignedBranchId);
+  const selectedBranchId = canManageBranches ? activeBranch?.id : assignedBranchId || activeBranch?.id;
 
   useEffect(() => {
     if (headerRef.current) {
@@ -198,6 +205,9 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
       .toUpperCase() ?? "U";
 
   const onBranchChange = async (branchId: string) => {
+    if (!canManageBranches) {
+      return;
+    }
     try {
       const res = await apiClient.patch<{ token: string }>("/auth/branch", { branchId });
       dispatch(patchSessionToken({ token: res.data.token }));
@@ -287,7 +297,7 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
             >
               {displayName}
             </Text>
-            {branches.length > 0 && (
+            {visibleBranches.length > 0 && (
               <div
                 style={{
                   display: "inline-flex",
@@ -304,11 +314,12 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
               >
                 <Select
                   variant="borderless"
-                  value={activeBranch?.id}
-                  options={branches.map((b) => ({ value: b.id, label: b.name }))}
+                  value={selectedBranchId}
+                  options={visibleBranches.map((b) => ({ value: b.id, label: b.name }))}
                   onChange={onBranchChange}
+                  disabled={!canManageBranches || visibleBranches.length <= 1}
                   optionRender={(opt) => {
-                    const b = branches.find((x) => x.id === opt.value);
+                    const b = visibleBranches.find((x) => x.id === opt.value);
                     if (!b) {
                       return <span>{opt.label}</span>;
                     }
@@ -327,7 +338,7 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
                     );
                   }}
                   labelRender={(props) => {
-                    const b = branches.find((x) => x.id === props.value);
+                    const b = visibleBranches.find((x) => x.id === props.value);
                     if (!b) {
                       return <span>{props.label}</span>;
                     }

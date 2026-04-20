@@ -150,16 +150,21 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
   const { message } = App.useApp();
   const { token } = theme.useToken();
   const session = useAppSelector(selectSession);
+  const canManageBranches = hasFeature(session, FEATURES.BRANCH_MANAGEMENT);
   const canCreateMember = hasFeature(session, FEATURES.MEMBER_MANAGEMENT);
   const canUpdateMember = hasFeature(session, FEATURES.MEMBER_MANAGEMENT);
   const canDeleteMember = hasFeature(session, FEATURES.MEMBER_MANAGEMENT);
-  const defaultBranchId = session?.activeBranch?.id ?? session?.user?.defaults?.branchId ?? "";
+  const assignedBranchId = session?.user?.defaults?.branchId ?? "";
+  const defaultBranchId = canManageBranches
+    ? session?.activeBranch?.id ?? assignedBranchId
+    : assignedBranchId || session?.activeBranch?.id || "";
 
   const [loading, setLoading] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
   const [plans, setPlans] = useState<MembershipPlan[]>([]);
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [branchFilter, setBranchFilter] = useState<string>(defaultBranchId);
+  const effectiveBranchId = canManageBranches ? branchFilter : defaultBranchId;
 
   const [modalOpen, setModalOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -170,19 +175,23 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
   const [form] = Form.useForm<FormShape>();
 
   useEffect(() => {
+    if (!canManageBranches && branchFilter !== defaultBranchId) {
+      setBranchFilter(defaultBranchId);
+      return;
+    }
     if (defaultBranchId && !branchFilter) {
       setBranchFilter(defaultBranchId);
     }
-  }, [defaultBranchId, branchFilter]);
+  }, [canManageBranches, defaultBranchId, branchFilter]);
 
   const loadPlans = useCallback(async () => {
-    if (!branchFilter) {
+    if (!effectiveBranchId) {
       setPlans([]);
       return;
     }
     try {
       const { data } = await apiClient.get<PlansResponse>("/gym/membership-plans", {
-        params: { branchId: branchFilter }
+        params: { branchId: effectiveBranchId }
       });
       if (data.success && Array.isArray(data.plans)) {
         setPlans(data.plans.filter((p) => p.isActive));
@@ -192,17 +201,17 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
     } catch {
       setPlans([]);
     }
-  }, [branchFilter]);
+  }, [effectiveBranchId]);
 
   const loadMembers = useCallback(async () => {
-    if (!branchFilter) {
+    if (!effectiveBranchId) {
       setMembers([]);
       onMemberCountChange?.(0);
       return;
     }
     setLoading(true);
     try {
-      const params: Record<string, string> = { branchId: branchFilter };
+      const params: Record<string, string> = { branchId: effectiveBranchId };
       if (statusFilter !== "all") {
         params.status = statusFilter;
       }
@@ -228,7 +237,7 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
     } finally {
       setLoading(false);
     }
-  }, [branchFilter, statusFilter, onMemberCountChange, message]);
+  }, [effectiveBranchId, statusFilter, onMemberCountChange, message]);
 
   useEffect(() => {
     void loadPlans();
@@ -240,8 +249,9 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
 
   const branchOptions = useMemo(() => {
     const br = session?.gym?.branches ?? [];
-    return br.map((b) => ({ value: b.id, label: `${b.name} (${b.code})` }));
-  }, [session?.gym]);
+    const visibleBranches = canManageBranches ? br : br.filter((branch) => branch.id === defaultBranchId);
+    return visibleBranches.map((b) => ({ value: b.id, label: `${b.name} (${b.code})` }));
+  }, [session?.gym?.branches, canManageBranches, defaultBranchId]);
 
   const planOptions = useMemo(
     () =>
@@ -257,7 +267,7 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
     setAvatarList([]);
     form.resetFields();
     form.setFieldsValue({
-      branchId: branchFilter || defaultBranchId,
+      branchId: effectiveBranchId || defaultBranchId,
       gender: "male",
       dateOfJoining: dayjs(),
       country: "India",
@@ -282,7 +292,7 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
       }
       const m = data.member;
       form.setFieldsValue({
-        branchId: m.branchId,
+        branchId: canManageBranches ? m.branchId : effectiveBranchId || m.branchId,
         firstName: m.firstName,
         lastName: m.lastName,
         email: m.email ?? undefined,
@@ -445,7 +455,7 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
       }
 
       const createPayload = {
-        branchId: values.branchId,
+        branchId: canManageBranches ? values.branchId : effectiveBranchId,
         firstName: values.firstName.trim(),
         lastName: values.lastName.trim(),
         email: values.email?.trim() || null,
@@ -633,9 +643,10 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
             optionFilterProp="label"
             style={{ minWidth: 220 }}
             placeholder="Branch"
-            value={branchFilter || undefined}
+            value={effectiveBranchId || undefined}
             onChange={(v) => setBranchFilter(v)}
             options={branchOptions}
+            disabled={!canManageBranches}
           />
           <Button icon={<ReloadOutlined />} onClick={() => void loadMembers()}>
             Refresh
@@ -834,7 +845,7 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
                   optionFilterProp="label"
                   placeholder="Select branch"
                   options={branchOptions}
-                  disabled={Boolean(editing)}
+                  disabled={Boolean(editing) || !canManageBranches}
                 />
               </Form.Item>
             </Col>

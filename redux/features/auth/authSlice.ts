@@ -4,8 +4,10 @@ import apiClient from "@/utils/api";
 import { isValidIndianMobile, toE164IndianMobile } from "@/utils/mobileValidation";
 import type {
   LegacyUserData,
+  SessionGym,
   SessionGymBranch,
-  SessionPayload
+  SessionPayload,
+  SessionUser
 } from "./sessionTypes";
 
 type LoginPayload = {
@@ -198,9 +200,11 @@ export const signupAsync = createAsyncThunk<SessionPayload, SignupPayload>(
 export const logoutAsync = createAsyncThunk("users/logout", async () => {
   const useMockAuth = isMockAuthEnabled();
   if (!useMockAuth) {
-    await apiClient.post("/auth/logout");
+    try {
+      await apiClient.post("/auth/logout");
   } catch {
     // Local auth state is still cleared in fulfilled reducer.
+  }
   }
   return true;
 });
