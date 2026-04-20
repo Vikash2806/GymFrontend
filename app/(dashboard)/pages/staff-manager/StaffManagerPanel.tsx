@@ -434,7 +434,7 @@ export default function StaffManagerPanel() {
         }}
         onOk={() => void onSubmit()}
         confirmLoading={submitting}
-        destroyOnClose
+        destroyOnHidden
         width={WIDE_MODAL_WIDTH}
       >
         <Form form={form} layout="vertical" requiredMark>

@@ -1,11 +1,26 @@
 "use client";
 
 import React, { Suspense, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { Badge, Card, Tabs, Spin } from "antd";
 import { UserOutlined, IdcardOutlined } from "@ant-design/icons";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import MembershipPlansPanel from "./MembershipPlansPanel";
-import MembersPanel from "./MembersPanel";
+
+const MembersPanel = dynamic(() => import("./MembersPanel"), {
+  loading: () => (
+    <div style={{ display: "flex", justifyContent: "center", padding: 48 }}>
+      <Spin size="large" />
+    </div>
+  )
+});
+
+const MembershipPlansPanel = dynamic(() => import("./MembershipPlansPanel"), {
+  loading: () => (
+    <div style={{ display: "flex", justifyContent: "center", padding: 48 }}>
+      <Spin size="large" />
+    </div>
+  )
+});
 import RbacPermissionGuard from "@/app/components/Auth/RbacPermissionGuard";
 import { FEATURES } from "@/utils/permissions";
 

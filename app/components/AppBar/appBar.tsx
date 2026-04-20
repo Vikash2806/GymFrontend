@@ -35,7 +35,7 @@ import {
   setSession,
   updateGymInSession
 } from "@/redux/features/auth/authSlice";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import apiClient from "@/utils/api";
 import { WIDE_MODAL_WIDTH } from "@/utils/modalWidths";
 import type { SessionGymBranch, SessionPayload } from "@/redux/features/auth/sessionTypes";
@@ -126,6 +126,7 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
   const session = useAppSelector(selectSession);
   const dispatch = useAppDispatch();
   const router = useRouter();
+  const pathname = usePathname();
 
   const [selectedCategory, setSelectedCategory] = useState(searchCategories[0]?.key ?? "Dashboard");
   const [searchValue, setSearchValue] = useState("");
@@ -151,6 +152,19 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
     }
   }, [gymModalOpen, gym, gymForm]);
 
+  useEffect(() => {
+    const routesToPrefetch = [
+      "/pages/dashboard",
+      "/pages/customers",
+      "/pages/employees",
+      "/pages/vendors",
+      "/pages/settings"
+    ];
+    for (const route of routesToPrefetch) {
+      router.prefetch(route);
+    }
+  }, [router]);
+
   const handleSearch = () => {
     const selected = searchCategories.find((item) => item.key === selectedCategory);
     router.push(selected?.route ?? "/pages/dashboard");
@@ -158,7 +172,9 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
 
   const onProfileMenuClick: MenuProps["onClick"] = async ({ key }) => {
     if (key === "settings") {
-      router.push("/pages/settings");
+      if (pathname !== "/pages/settings") {
+        router.push("/pages/settings");
+      }
       return;
     }
     if (key === "logout") {
@@ -433,7 +449,11 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
               border: `1px solid ${token.colorBorder}`,
               backgroundColor: token.colorBgContainer
             }}
-            onClick={() => router.push("/pages/settings")}
+            onClick={() => {
+              if (pathname !== "/pages/settings") {
+                router.push("/pages/settings");
+              }
+            }}
           />
           <Dropdown menu={{ items: profileMenuItems, onClick: onProfileMenuClick }} trigger={["click"]}>
             <Avatar size={36} style={{ backgroundColor: token.colorPrimary, cursor: "pointer" }}>
