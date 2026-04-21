@@ -62,8 +62,7 @@ function featureSort(features: FeatureKey[]): FeatureKey[] {
 function normalizeRoleFeatures(role: "owner" | "manager" | "staff", features: FeatureKey[]): FeatureKey[] {
   const deduped = featureSort(uniqueFeatures(features));
   if (role === "owner") {
-    const withoutLocked = deduped.filter((feature) => feature !== "rbac_settings");
-    return [...withoutLocked, "rbac_settings"];
+    return deduped;
   }
   return deduped.filter((feature) => feature !== "rbac_settings" && feature !== "user_management");
 }

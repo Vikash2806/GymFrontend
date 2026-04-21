@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   App,
   Button,
@@ -36,11 +36,16 @@ import apiClient from "@/utils/api";
 import { WIDE_MODAL_WIDTH } from "@/utils/modalWidths";
 import type { BranchRow, BranchesListResponse, BranchMutationResponse } from "@/types/branch";
 import { INDIAN_STATES } from "@/utils/indianStates";
+import { isValidIndianMobile, stripToIndianMobileDigits, toE164IndianMobile } from "@/utils/mobileValidation";
+import { TAMIL_NADU_CITIES_AND_DISTRICTS } from "@/utils/tamilNaduLocations";
 import { useAppDispatch } from "@/redux/hooks";
 import { patchSessionToken, setSession } from "@/redux/features/auth/authSlice";
 import type { SessionPayload } from "@/redux/features/auth/sessionTypes";
+import ExportButton from "@/app/components/Export/ExportButton";
 
 const { Title, Text } = Typography;
+const DEFAULT_STATE = "Tamil Nadu";
+const DEFAULT_CITY = "Thanjavur";
 
 type FormValues = {
   name: string;
@@ -49,7 +54,7 @@ type FormValues = {
   country: string;
   state: string;
   city: string;
-  pincode: string;
+  pincode?: string;
   phone: string;
   email?: string;
   status: "active" | "inactive";
@@ -81,6 +86,16 @@ export default function BranchesPanel() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<BranchRow | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const watchedCity = Form.useWatch("city", form);
+
+  const cityOptions = useMemo(() => {
+    const base = [...TAMIL_NADU_CITIES_AND_DISTRICTS];
+    const current = String(watchedCity ?? "").trim();
+    if (current && !base.some((item) => item.toLowerCase() === current.toLowerCase())) {
+      base.unshift(current);
+    }
+    return base.map((city) => ({ value: city, label: city }));
+  }, [watchedCity]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -120,7 +135,7 @@ export default function BranchesPanel() {
         state: editing.address.state,
         city: editing.address.city,
         pincode: editing.address.pincode,
-        phone: editing.contact.phone,
+        phone: stripToIndianMobileDigits(editing.contact.phone),
         email: editing.contact.email ?? undefined,
         status: editing.status
       });
@@ -128,6 +143,8 @@ export default function BranchesPanel() {
       form.resetFields();
       form.setFieldsValue({
         country: "India",
+        state: DEFAULT_STATE,
+        city: DEFAULT_CITY,
         status: "active"
       });
     }
@@ -150,7 +167,7 @@ export default function BranchesPanel() {
       const payload = {
         name: values.name.trim(),
         contact: {
-          phone: values.phone.trim(),
+          phone: toE164IndianMobile(values.phone) ?? values.phone.trim(),
           email: values.email?.trim() ? values.email.trim() : null
         },
         address: {
@@ -159,7 +176,7 @@ export default function BranchesPanel() {
           country: values.country.trim(),
           state: values.state.trim(),
           city: values.city.trim(),
-          pincode: values.pincode.trim()
+          pincode: (values.pincode ?? "").trim()
         },
         status: values.status
       };
@@ -266,7 +283,17 @@ export default function BranchesPanel() {
     {
       title: "Manager",
       key: "manager",
-      render: () => <Text type="secondary">Not Assigned</Text>
+      render: (_, record) =>
+        record.manager ? (
+          <Space direction="vertical" size={0}>
+            <Text>{record.manager.fullName}</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {record.manager.status === "active" ? "Active" : "Inactive"}
+            </Text>
+          </Space>
+        ) : (
+          <Text type="secondary">Not Assigned</Text>
+        )
     },
     {
       title: "Members",
@@ -320,9 +347,12 @@ export default function BranchesPanel() {
           <Title level={3} style={{ margin: 0 }}>
             Branches Management
           </Title>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-            Add Branch
-          </Button>
+          <Space wrap>
+            <ExportButton endpoint="/gym/exports/branches" defaultFilename="branches.csv" />
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+              Add Branch
+            </Button>
+          </Space>
         </Flex>
 
         <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
@@ -440,11 +470,16 @@ export default function BranchesPanel() {
             </Col>
             <Col xs={24} sm={12}>
               <Form.Item name="city" label="City" rules={[{ required: true, message: "Required" }]}>
-                <Input placeholder="City" allowClear />
+                <Select
+                  showSearch
+                  optionFilterProp="label"
+                  placeholder="Select city / district"
+                  options={cityOptions}
+                />
               </Form.Item>
             </Col>
             <Col xs={24} sm={12}>
-              <Form.Item name="pincode" label="Zip / Pin Code" rules={[{ required: true, message: "Required" }]}>
+              <Form.Item name="pincode" label="Zip / Pin Code (optional)">
                 <Input placeholder="Pin code" allowClear />
               </Form.Item>
             </Col>
@@ -457,12 +492,42 @@ export default function BranchesPanel() {
           <Divider plain>Contact</Divider>
 
           <Form.Item
-            name="phone"
             label="Phone"
-            rules={[{ required: true, message: "Required" }]}
             extra="Indian mobile (+91)"
           >
-            <Input placeholder="+91 9876543210" allowClear />
+            <Space.Compact style={{ width: "100%" }}>
+              <Input
+                readOnly
+                tabIndex={-1}
+                value="+91"
+                style={{ width: 64, textAlign: "center" }}
+                aria-label="Country code India"
+              />
+              <Form.Item
+                name="phone"
+                noStyle
+                getValueFromEvent={(e) => stripToIndianMobileDigits(e.target?.value ?? e)}
+                rules={[
+                  { required: true, message: "Required" },
+                  {
+                    validator: async (_, value) => {
+                      const digits = stripToIndianMobileDigits(value);
+                      if (!isValidIndianMobile(digits)) {
+                        throw new Error("Enter a valid 10-digit Indian mobile number");
+                      }
+                    }
+                  }
+                ]}
+              >
+                <Input
+                  maxLength={10}
+                  inputMode="numeric"
+                  placeholder="Enter 10 Digit Mobile Number"
+                  allowClear
+                  style={{ width: "calc(100% - 64px)" }}
+                />
+              </Form.Item>
+            </Space.Compact>
           </Form.Item>
 
           <Form.Item name="email" label="Email (optional)">

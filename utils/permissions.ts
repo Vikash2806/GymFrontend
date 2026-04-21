@@ -13,6 +13,7 @@ export const FEATURES = {
   EXPENSES: "expenses",
   STAFF_MANAGEMENT: "staff_management",
   SETTINGS: "settings",
+  GYM_PROFILE: "gym_profile",
   USER_MANAGEMENT: "user_management",
   RBAC_SETTINGS: "rbac_settings"
 } as const;

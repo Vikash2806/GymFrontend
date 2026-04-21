@@ -144,7 +144,7 @@ const DashboardLayout: React.FC<Props> = ({ children }) => {
           <Layout.Content
             style={{
               margin: 0,
-              padding: 24,
+              padding: 12,
               overflowY: "auto",
               overflowX: "hidden",
               background: token.colorBgLayout,

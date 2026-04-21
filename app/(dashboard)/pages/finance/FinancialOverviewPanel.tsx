@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import {
   App,
@@ -28,6 +28,7 @@ import type { FinanceOverviewPayload, FinanceOverviewResponse } from "@/types/fi
 import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
 import { gymMembershipRoleFromSession } from "@/utils/gymRole";
+import ExportButton from "@/app/components/Export/ExportButton";
 
 const RevenueTrendChart = dynamic(() => import("./RevenueTrendChart"), {
   ssr: false,
@@ -54,6 +55,7 @@ const MONTHS: { value: number; label: string }[] = [
   { value: 11, label: "November" },
   { value: 12, label: "December" }
 ];
+const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 export default function FinancialOverviewPanel() {
   const { message } = App.useApp();
@@ -72,13 +74,39 @@ export default function FinancialOverviewPanel() {
   const [branchId, setBranchId] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [overview, setOverview] = useState<FinanceOverviewPayload | null>(null);
+  const [loadingRevenueTrend, setLoadingRevenueTrend] = useState(false);
+  const [revenueTrendData, setRevenueTrendData] = useState<
+    { month: number; label: string; amount: number; year: number }[]
+  >([]);
+  const activeBranchId = session?.activeBranch?.id ?? session?.user?.defaults?.branchId ?? "";
+  const lastSyncedActiveBranchId = useRef<string>("");
+  const overviewReqSeq = useRef(0);
+  const revenueTrendReqSeq = useRef(0);
 
   const branchOptions = useMemo(() => {
     const br = session?.gym?.branches ?? [];
     return br.map((b) => ({ value: b.id, label: `${b.name} (${b.code})` }));
   }, [session?.gym?.branches]);
 
+  useEffect(() => {
+    if (!isOwner) {
+      setBranchId(undefined);
+      lastSyncedActiveBranchId.current = "";
+      return;
+    }
+    if (!lastSyncedActiveBranchId.current) {
+      setBranchId(activeBranchId || undefined);
+      lastSyncedActiveBranchId.current = activeBranchId;
+      return;
+    }
+    if (activeBranchId !== lastSyncedActiveBranchId.current) {
+      setBranchId(activeBranchId || undefined);
+      lastSyncedActiveBranchId.current = activeBranchId;
+    }
+  }, [isOwner, activeBranchId]);
+
   const load = useCallback(async () => {
+    const reqId = ++overviewReqSeq.current;
     setLoading(true);
     try {
       const params: Record<string, string | number> = { year, month };
@@ -86,33 +114,71 @@ export default function FinancialOverviewPanel() {
         params.branchId = branchId;
       }
       const { data } = await apiClient.get<FinanceOverviewResponse>("/gym/finance/overview", { params });
+      if (reqId !== overviewReqSeq.current) {
+        return;
+      }
       if (data.success && data.overview) {
         setOverview(data.overview);
       } else {
         setOverview(null);
       }
     } catch {
+      if (reqId !== overviewReqSeq.current) {
+        return;
+      }
       setOverview(null);
       message.error("Could not load financial overview.");
     } finally {
-      setLoading(false);
+      if (reqId === overviewReqSeq.current) {
+        setLoading(false);
+      }
     }
-  }, [year, month, branchId, isOwner]);
+  }, [year, month, branchId, isOwner, message]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const chartData = useMemo(() => {
-    if (!overview) {
-      return [];
+  const loadRevenueTrend = useCallback(async () => {
+    const reqId = ++revenueTrendReqSeq.current;
+    setLoadingRevenueTrend(true);
+    try {
+      const requests = Array.from({ length: 12 }, (_, i) => {
+        const monthValue = i + 1;
+        const params: Record<string, string | number> = { year, month: monthValue };
+        if (isOwner && branchId) {
+          params.branchId = branchId;
+        }
+        return apiClient.get<FinanceOverviewResponse>("/gym/finance/overview", { params });
+      });
+
+      const results = await Promise.all(requests);
+      if (reqId !== revenueTrendReqSeq.current) {
+        return;
+      }
+      const nextData = results.map((result, index) => ({
+        month: index + 1,
+        label: MONTH_SHORT[index],
+        amount: result.data.success && result.data.overview ? result.data.overview.totals.revenue : 0,
+        year
+      }));
+      setRevenueTrendData(nextData);
+    } catch {
+      if (reqId !== revenueTrendReqSeq.current) {
+        return;
+      }
+      setRevenueTrendData([]);
+      message.error("Could not load yearly revenue trend.");
+    } finally {
+      if (reqId === revenueTrendReqSeq.current) {
+        setLoadingRevenueTrend(false);
+      }
     }
-    return overview.revenueByDay.map((d) => ({
-      day: d.day,
-      label: String(d.day),
-      amount: d.amount
-    }));
-  }, [overview]);
+  }, [year, isOwner, branchId, message]);
+
+  useEffect(() => {
+    void loadRevenueTrend();
+  }, [loadRevenueTrend]);
 
   const periodLabel = useMemo(() => {
     if (!overview) {
@@ -230,22 +296,22 @@ export default function FinancialOverviewPanel() {
       </Row>
 
       <Card
-        loading={loading}
+        loading={loadingRevenueTrend}
         style={{ marginTop: 16 }}
         styles={{ body: { paddingTop: 16 } }}
         title={
           <div>
             <Title level={5} style={{ margin: 0 }}>
-              Revenue Trends
+              Monthly Revenue Trends
             </Title>
-            <Text type="secondary">Monthly revenue analysis</Text>
+            <Text type="secondary">Year {year}</Text>
           </div>
         }
       >
-        {chartData.length > 0 ? (
-          <RevenueTrendChart chartData={chartData} gridStroke={token.colorBorderSecondary} />
+        {revenueTrendData.length > 0 ? (
+          <RevenueTrendChart chartData={revenueTrendData} gridStroke={token.colorBorderSecondary} />
         ) : (
-          <Empty description="No revenue data for this period" />
+          <Empty description="No monthly revenue data for this year" />
         )}
       </Card>
 
@@ -307,6 +373,17 @@ export default function FinancialOverviewPanel() {
                 <Text type="secondary">Members who made payments this month</Text>
               </div>
             }
+            extra={
+              <ExportButton
+                endpoint="/gym/exports/finance/payments"
+                params={{
+                  year,
+                  month,
+                  branchId: isOwner ? branchId : undefined
+                }}
+                defaultFilename="finance-payments.csv"
+              />
+            }
           >
             {overview && overview.paymentsThisMonth.length > 0 ? (
               <Table
@@ -350,6 +427,17 @@ export default function FinancialOverviewPanel() {
                 </Title>
                 <Text type="secondary">Members with outstanding payments</Text>
               </div>
+            }
+            extra={
+              <ExportButton
+                endpoint="/gym/exports/finance/pending"
+                params={{
+                  year,
+                  month,
+                  branchId: isOwner ? branchId : undefined
+                }}
+                defaultFilename="finance-pending.csv"
+              />
             }
           >
             {overview && overview.pendingSummary.totalMembers > 0 ? (

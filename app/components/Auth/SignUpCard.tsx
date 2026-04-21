@@ -34,7 +34,7 @@ const { Title, Text } = Typography;
 
 type AccountStepValues = {
   firstName: string;
-  lastName: string;
+  lastName?: string;
   mobileNumber: string;
   recoveryEmail?: string;
   password: string;
@@ -93,7 +93,7 @@ export default function SignUpCard() {
     const result = await dispatch(
       signupAsync({
         firstName: accountSnapshot.firstName,
-        lastName: accountSnapshot.lastName,
+        lastName: accountSnapshot.lastName?.trim() ?? "",
         mobileNumber: normalized,
         recoveryEmail: accountSnapshot.recoveryEmail?.trim() ?? "",
         password: accountSnapshot.password,
@@ -155,7 +155,6 @@ export default function SignUpCard() {
               <Form.Item
                 label="Last name"
                 name="lastName"
-                rules={[{ required: true, message: "Enter your last name." }]}
               >
                 <Input
                   size="large"

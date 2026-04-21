@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Alert,
   App,
   Avatar,
   Button,
@@ -49,6 +50,7 @@ import { selectSession } from "@/redux/features/auth/authSlice";
 import { stripToIndianMobileDigits } from "@/utils/mobileValidation";
 import { formatInrWhole } from "@/utils/formatCurrency";
 import { FEATURES, hasFeature } from "@/utils/permissions";
+import ExportButton from "@/app/components/Export/ExportButton";
 
 const { Title, Text } = Typography;
 
@@ -73,6 +75,13 @@ function formatDisplayDate(iso: string | undefined): string {
 type ListResponse = { success: boolean; members?: Member[]; message?: string };
 type MemberResponse = { success: boolean; member?: Member; message?: string };
 type PlansResponse = { success: boolean; plans?: MembershipPlan[]; message?: string };
+type MemberLookupResponse = {
+  success: boolean;
+  found?: boolean;
+  member?: Member | null;
+  message?: string;
+};
+type SubscriptionCreateResponse = { success: boolean; message?: string };
 
 function ageFromDob(iso: string | null): string {
   if (!iso) {
@@ -124,7 +133,7 @@ function billingCell(m: Member, token: { colorWarning: string }) {
 type FormShape = {
   branchId: string;
   firstName: string;
-  lastName: string;
+  lastName?: string;
   email?: string;
   phone: string;
   gender: string;
@@ -164,6 +173,8 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
   const [plans, setPlans] = useState<MembershipPlan[]>([]);
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [branchFilter, setBranchFilter] = useState<string>(defaultBranchId);
+  const [nameSearch, setNameSearch] = useState("");
+  const [debouncedNameSearch, setDebouncedNameSearch] = useState("");
   const effectiveBranchId = canManageBranches ? branchFilter : defaultBranchId;
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -172,36 +183,46 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
   const [editing, setEditing] = useState<Member | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [avatarList, setAvatarList] = useState<UploadFile[]>([]);
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [lookupMember, setLookupMember] = useState<Member | null>(null);
+  const [lookupNote, setLookupNote] = useState<string>("");
+  const planRequestSeq = useRef(0);
   const [form] = Form.useForm<FormShape>();
+  const watchedPhone = Form.useWatch("phone", form);
+  const watchedBranchId = Form.useWatch("branchId", form);
 
   useEffect(() => {
-    if (!canManageBranches && branchFilter !== defaultBranchId) {
+    if (branchFilter !== defaultBranchId) {
       setBranchFilter(defaultBranchId);
       return;
     }
-    if (defaultBranchId && !branchFilter) {
-      setBranchFilter(defaultBranchId);
-    }
-  }, [canManageBranches, defaultBranchId, branchFilter]);
+  }, [defaultBranchId, branchFilter]);
 
-  const loadPlans = useCallback(async () => {
-    if (!effectiveBranchId) {
+  const loadPlans = useCallback(async (branchId: string) => {
+    if (!branchId) {
       setPlans([]);
       return;
     }
+    const requestId = ++planRequestSeq.current;
     try {
       const { data } = await apiClient.get<PlansResponse>("/gym/membership-plans", {
-        params: { branchId: effectiveBranchId }
+        params: { branchId }
       });
+      if (requestId !== planRequestSeq.current) {
+        return;
+      }
       if (data.success && Array.isArray(data.plans)) {
         setPlans(data.plans.filter((p) => p.isActive));
       } else {
         setPlans([]);
       }
     } catch {
+      if (requestId !== planRequestSeq.current) {
+        return;
+      }
       setPlans([]);
     }
-  }, [effectiveBranchId]);
+  }, []);
 
   const loadMembers = useCallback(async () => {
     if (!effectiveBranchId) {
@@ -239,13 +260,44 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
     }
   }, [effectiveBranchId, statusFilter, onMemberCountChange, message]);
 
+  const planBranchId = useMemo(() => {
+    if (editing) {
+      return "";
+    }
+    if (typeof watchedBranchId === "string" && watchedBranchId) {
+      return watchedBranchId;
+    }
+    return effectiveBranchId || defaultBranchId || "";
+  }, [editing, watchedBranchId, effectiveBranchId, defaultBranchId]);
+
   useEffect(() => {
-    void loadPlans();
-  }, [loadPlans]);
+    if (editing) {
+      setPlans([]);
+      return;
+    }
+    void loadPlans(planBranchId);
+  }, [editing, planBranchId, loadPlans]);
+
+  useEffect(() => {
+    if (editing || !modalOpen) {
+      return;
+    }
+    const selectedPlan = form.getFieldValue("planId");
+    if (selectedPlan && !plans.some((p) => p._id === selectedPlan)) {
+      form.setFieldsValue({ planId: undefined, paidAmount: 0 });
+    }
+  }, [editing, modalOpen, plans, form]);
 
   useEffect(() => {
     void loadMembers();
   }, [loadMembers]);
+
+  useEffect(() => {
+    const timer = globalThis.setTimeout(() => {
+      setDebouncedNameSearch(nameSearch.trim().toLowerCase());
+    }, 250);
+    return () => globalThis.clearTimeout(timer);
+  }, [nameSearch]);
 
   const branchOptions = useMemo(() => {
     const br = session?.gym?.branches ?? [];
@@ -262,9 +314,41 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
     [plans]
   );
 
+  const reloadPlansForOpenDropdown = useCallback(() => {
+    if (editing) {
+      return;
+    }
+    const selectedBranch = String(form.getFieldValue("branchId") ?? "");
+    const fallbackBranch = effectiveBranchId || defaultBranchId || "";
+    const targetBranchId = selectedBranch || fallbackBranch;
+    if (!targetBranchId) {
+      return;
+    }
+    void loadPlans(targetBranchId);
+  }, [editing, form, effectiveBranchId, defaultBranchId, loadPlans]);
+
+  const displayedMembers = useMemo(() => {
+    if (!debouncedNameSearch) {
+      return members;
+    }
+    const digitsQuery = debouncedNameSearch.replace(/\D/g, "");
+    return members.filter((member) => {
+      const fullName = `${member.firstName} ${member.lastName}`.toLowerCase();
+      const memberPhone = member.profile.phone ?? "";
+      return (
+        fullName.includes(debouncedNameSearch) ||
+        member.firstName.toLowerCase().includes(debouncedNameSearch) ||
+        member.lastName.toLowerCase().includes(debouncedNameSearch) ||
+        (digitsQuery.length > 0 && memberPhone.includes(digitsQuery))
+      );
+    });
+  }, [members, debouncedNameSearch]);
+
   const openCreate = () => {
     setEditing(null);
     setAvatarList([]);
+    setLookupMember(null);
+    setLookupNote("");
     form.resetFields();
     form.setFieldsValue({
       branchId: effectiveBranchId || defaultBranchId,
@@ -281,6 +365,8 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
   const openEdit = async (record: Member) => {
     setEditing(record);
     setAvatarList([]);
+    setLookupMember(null);
+    setLookupNote("");
     setModalOpen(true);
     setSubmitting(true);
     try {
@@ -329,7 +415,61 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
     setEditing(null);
     form.resetFields();
     setAvatarList([]);
+    setLookupMember(null);
+    setLookupNote("");
+    setLookupLoading(false);
   };
+
+  const lookupExistingMember = useCallback(
+    async (phoneDigits: string, branchId: string) => {
+      if (!phoneDigits || phoneDigits.length !== 10 || !branchId) {
+        setLookupMember(null);
+        setLookupNote("");
+        return;
+      }
+      setLookupLoading(true);
+      try {
+        const { data } = await apiClient.get<MemberLookupResponse>("/gym/members/lookup", {
+          params: { phone: phoneDigits, branchId }
+        });
+        if (data.success && data.found && data.member) {
+          setLookupMember(data.member);
+          setLookupNote("Existing member found for this branch. Subscription will be added to that member.");
+        } else {
+          setLookupMember(null);
+          setLookupNote("No existing member found in this branch. A new member will be created.");
+        }
+      } catch (e: unknown) {
+        const msg =
+          e && typeof e === "object" && "response" in e
+            ? (e as { response?: { data?: { message?: string } } }).response?.data?.message
+            : undefined;
+        setLookupMember(null);
+        setLookupNote(msg ?? "Could not check existing member by mobile.");
+      } finally {
+        setLookupLoading(false);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!modalOpen || Boolean(editing)) {
+      return;
+    }
+    const phoneDigits = stripToIndianMobileDigits(watchedPhone ?? "");
+    const scopedBranchId = String(watchedBranchId ?? "");
+    if (phoneDigits.length !== 10 || !scopedBranchId) {
+      setLookupMember(null);
+      setLookupNote("");
+      setLookupLoading(false);
+      return;
+    }
+    const timer = globalThis.setTimeout(() => {
+      void lookupExistingMember(phoneDigits, scopedBranchId);
+    }, 350);
+    return () => globalThis.clearTimeout(timer);
+  }, [modalOpen, editing, watchedPhone, watchedBranchId, lookupExistingMember]);
 
   const closeDetail = () => {
     setDetailOpen(false);
@@ -403,7 +543,7 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
       if (editing) {
         const payload = {
           firstName: values.firstName.trim(),
-          lastName: values.lastName.trim(),
+          lastName: (values.lastName ?? "").trim(),
           email: values.email?.trim() || null,
           profile: {
             phone: phoneDigits,
@@ -454,10 +594,36 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
         return;
       }
 
+      const scopedBranchId = canManageBranches ? values.branchId : effectiveBranchId;
+      if (!scopedBranchId) {
+        message.error("Select a branch.");
+        setSubmitting(false);
+        return;
+      }
+
+      let existingMemberForSubmit: Member | null = null;
+      try {
+        const lookup = await apiClient.get<MemberLookupResponse>("/gym/members/lookup", {
+          params: { phone: phoneDigits, branchId: scopedBranchId }
+        });
+        if (lookup.data.success && lookup.data.found && lookup.data.member) {
+          existingMemberForSubmit = lookup.data.member;
+          setLookupMember(lookup.data.member);
+          setLookupNote("Existing member found for this branch. Subscription will be added to that member.");
+        } else {
+          setLookupMember(null);
+          setLookupNote("No existing member found in this branch. A new member will be created.");
+        }
+      } catch {
+        message.error("Could not verify existing member by mobile. Please try again.");
+        setSubmitting(false);
+        return;
+      }
+
       const createPayload = {
-        branchId: canManageBranches ? values.branchId : effectiveBranchId,
+        branchId: scopedBranchId,
         firstName: values.firstName.trim(),
-        lastName: values.lastName.trim(),
+        lastName: (values.lastName ?? "").trim(),
         email: values.email?.trim() || null,
         profile: {
           phone: phoneDigits,
@@ -483,6 +649,57 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
           autoRenew: false
         }
       };
+      if (existingMemberForSubmit) {
+        const patchPayload = {
+          firstName: values.firstName.trim(),
+          lastName: (values.lastName ?? "").trim(),
+          email: values.email?.trim() || null,
+          profile: {
+            phone: phoneDigits,
+            gender: values.gender,
+            dob: values.dob ? values.dob.toDate().toISOString() : null,
+            profilePicture
+          },
+          address: {
+            street: (values.street ?? "").trim(),
+            city: (values.city ?? "").trim(),
+            state: (values.state ?? "").trim(),
+            zipcode: (values.zipcode ?? "").trim(),
+            country: (values.country ?? "").trim() || "India"
+          },
+          emergencyContacts: ec,
+          notes: (values.notes ?? "").trim(),
+          status: existingMemberForSubmit.status
+        };
+        const patchRes = await apiClient.patch<MemberResponse>(
+          `/gym/members/${existingMemberForSubmit._id}`,
+          patchPayload
+        );
+        if (!patchRes.data.success) {
+          message.error(patchRes.data.message ?? "Could not update existing member details.");
+          return;
+        }
+
+        const subRes = await apiClient.post<SubscriptionCreateResponse>(
+          `/gym/members/${existingMemberForSubmit._id}/subscriptions`,
+          {
+            planId: values.planId,
+            startDate: values.dateOfJoining.toDate().toISOString(),
+            paidAmount: values.paidAmount ?? 0,
+            method: values.paymentMethod,
+            transactionRef: null,
+            autoRenew: false
+          }
+        );
+        if (subRes.data.success) {
+          message.success("Existing member enrolled with a new subscription.");
+          closeModal();
+          await loadMembers();
+        } else {
+          message.error(subRes.data.message ?? "Could not add subscription for existing member.");
+        }
+        return;
+      }
 
       const { data } = await apiClient.post<MemberResponse>("/gym/members", createPayload);
       if (data.success) {
@@ -628,6 +845,13 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
           Members
         </Title>
         <Space wrap>
+          <Input
+            allowClear
+            value={nameSearch}
+            onChange={(e) => setNameSearch(e.target.value)}
+            placeholder="Search name or mobile"
+            style={{ width: 220 }}
+          />
           <Select
             style={{ minWidth: 160 }}
             value={statusFilter}
@@ -651,6 +875,16 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
           <Button icon={<ReloadOutlined />} onClick={() => void loadMembers()}>
             Refresh
           </Button>
+          <ExportButton
+            endpoint="/gym/exports/members"
+            params={{
+              branchId: effectiveBranchId || undefined,
+              status: statusFilter !== "all" ? statusFilter : undefined,
+              search: nameSearch.trim() || undefined
+            }}
+            defaultFilename="members.csv"
+            disabled={!effectiveBranchId}
+          />
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} disabled={!canCreateMember}>
             Add member
           </Button>
@@ -661,7 +895,7 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
         rowKey="_id"
         loading={loading}
         columns={columns}
-        dataSource={members}
+        dataSource={displayedMembers}
         components={tableComponents}
         rowSelection={{ type: "checkbox" }}
         pagination={{
@@ -761,7 +995,7 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
       </Modal>
 
       <Modal
-        title={editing ? "Edit member" : "Add member"}
+        title={editing ? "Edit member" : "Add or enroll member"}
         open={modalOpen}
         onCancel={closeModal}
         width={WIDE_MODAL_WIDTH}
@@ -771,7 +1005,7 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
             Cancel
           </Button>,
           <Button key="submit" type="primary" loading={submitting} onClick={() => void onSubmit()}>
-            {editing ? "Save changes" : "Create Member"}
+            {editing ? "Save changes" : lookupMember ? "Enroll Existing Member" : "Create Member"}
           </Button>
         ]}
       >
@@ -790,7 +1024,6 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
               <Form.Item
                 name="lastName"
                 label="Last Name"
-                rules={[{ required: true, message: "Enter last name" }]}
               >
                 <Input placeholder="Enter last name" allowClear />
               </Form.Item>
@@ -850,6 +1083,17 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
               </Form.Item>
             </Col>
           </Row>
+          {!editing && lookupLoading ? (
+            <Alert type="info" message="Checking existing member by mobile..." showIcon style={{ marginBottom: 16 }} />
+          ) : null}
+          {!editing && !lookupLoading && lookupNote ? (
+            <Alert
+              type={lookupMember ? "info" : "success"}
+              message={lookupNote}
+              showIcon
+              style={{ marginBottom: 16 }}
+            />
+          ) : null}
 
           <Form.Item
             label={
@@ -970,6 +1214,11 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
                       optionFilterProp="label"
                       placeholder={planOptions.length ? "Select plan" : "No active plans found"}
                       options={planOptions}
+                      onOpenChange={(open) => {
+                        if (open) {
+                          reloadPlansForOpenDropdown();
+                        }
+                      }}
                       notFoundContent={
                         planOptions.length ? undefined : (
                           <Text type="secondary">Create a plan under the Memberships tab.</Text>

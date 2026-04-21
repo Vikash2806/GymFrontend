@@ -25,6 +25,7 @@ import { WIDE_MODAL_WIDTH } from "@/utils/modalWidths";
 import type { Member } from "@/types/member";
 import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
+import ExportButton from "@/app/components/Export/ExportButton";
 
 const { Title, Text } = Typography;
 
@@ -38,7 +39,14 @@ const tableComponents: TableProps<Member>["components"] = {
   }
 };
 
-type ListResponse = { success: boolean; members?: Member[]; message?: string };
+type ListResponse = {
+  success: boolean;
+  members?: Member[];
+  total?: number;
+  page?: number;
+  pageSize?: number;
+  message?: string;
+};
 
 type PostPaymentResponse = {
   success: boolean;
@@ -61,6 +69,9 @@ export default function BillingPanel() {
 
   const [loading, setLoading] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [branchFilter, setBranchFilter] = useState<string>(defaultBranchId);
   const [search, setSearch] = useState("");
   const [searchDraft, setSearchDraft] = useState("");
@@ -71,8 +82,9 @@ export default function BillingPanel() {
   const [form] = Form.useForm<PaymentFormValues>();
 
   useEffect(() => {
-    if (defaultBranchId && !branchFilter) {
+    if (defaultBranchId && branchFilter !== defaultBranchId) {
       setBranchFilter(defaultBranchId);
+      setPage(1);
     }
   }, [defaultBranchId, branchFilter]);
 
@@ -92,13 +104,16 @@ export default function BillingPanel() {
   const loadMembers = useCallback(async () => {
     if (!branchFilter) {
       setMembers([]);
+      setTotal(0);
       return;
     }
     setLoading(true);
     try {
       const params: Record<string, string> = {
         branchId: branchFilter,
-        pendingPayment: "true"
+        pendingPayment: "true",
+        page: String(page),
+        pageSize: String(pageSize)
       };
       const q = search.trim();
       if (q) {
@@ -107,8 +122,10 @@ export default function BillingPanel() {
       const { data } = await apiClient.get<ListResponse>("/gym/members", { params });
       if (data.success && Array.isArray(data.members)) {
         setMembers(data.members);
+        setTotal(typeof data.total === "number" ? data.total : data.members.length);
       } else {
         setMembers([]);
+        setTotal(0);
         if (data.message) {
           message.error(data.message);
         }
@@ -120,10 +137,11 @@ export default function BillingPanel() {
           : undefined;
       message.error(msg ?? "Could not load overdue payments.");
       setMembers([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
-  }, [branchFilter, search, message]);
+  }, [branchFilter, search, page, pageSize, message]);
 
   useEffect(() => {
     void loadMembers();
@@ -137,16 +155,27 @@ export default function BillingPanel() {
         return;
       }
       setPayingMember(record);
-      form.setFieldsValue({
-        amount: sub.payment.pendingAmount,
-        method: "cash",
-        transactionRef: undefined,
-        paidAt: dayjs()
-      });
       setPayModalOpen(true);
     },
-    [form, message]
+    [message]
   );
+
+  useEffect(() => {
+    if (!payModalOpen) {
+      return;
+    }
+    const sub = payingMember?.currentSubscription;
+    if (!sub) {
+      form.resetFields();
+      return;
+    }
+    form.setFieldsValue({
+      amount: sub.payment.pendingAmount,
+      method: "cash",
+      transactionRef: undefined,
+      paidAt: dayjs()
+    });
+  }, [payModalOpen, payingMember, form]);
 
   const closePay = () => {
     setPayModalOpen(false);
@@ -206,7 +235,7 @@ export default function BillingPanel() {
           return (
             <Space direction="vertical" size={0}>
               <Text strong>
-                {record._id.slice(-6)}_{record.firstName} {record.lastName}
+                {record.firstName} {record.lastName}
               </Text>
               <Text type="secondary" style={{ fontSize: 12 }}>
                 {(code ?? record.branchId).toLowerCase()}
@@ -287,8 +316,12 @@ export default function BillingPanel() {
             style={{ minWidth: 220 }}
             value={searchDraft}
             onChange={(e) => setSearchDraft(e.target.value)}
-            onSearch={(v) => setSearch(v)}
+            onSearch={(v) => {
+              setPage(1);
+              setSearch(v);
+            }}
             onClear={() => {
+              setPage(1);
               setSearchDraft("");
               setSearch("");
             }}
@@ -300,12 +333,24 @@ export default function BillingPanel() {
             style={{ minWidth: 220 }}
             placeholder="Branch"
             value={branchFilter || undefined}
-            onChange={(v) => setBranchFilter(v)}
+            onChange={(v) => {
+              setPage(1);
+              setBranchFilter(v);
+            }}
             options={branchOptions}
           />
           <Button icon={<ReloadOutlined />} onClick={() => void loadMembers()}>
             Refresh
           </Button>
+          <ExportButton
+            endpoint="/gym/exports/overdue-payments"
+            params={{
+              branchId: branchFilter || undefined,
+              search: search.trim() || undefined
+            }}
+            defaultFilename="overdue-payments.csv"
+            disabled={!branchFilter}
+          />
         </Space>
       </div>
 
@@ -316,9 +361,19 @@ export default function BillingPanel() {
         dataSource={members}
         components={tableComponents}
         pagination={{
-          pageSize: 10,
+          current: page,
+          pageSize,
+          total,
           showSizeChanger: true,
-          showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} pending payments`
+          pageSizeOptions: ["10", "20", "50", "100"],
+          showQuickJumper: true,
+          hideOnSinglePage: false,
+          position: ["bottomRight"],
+          showTotal: (value, range) => `${range[0]}-${range[1]} of ${value} pending payments`,
+          onChange: (nextPage, nextPageSize) => {
+            setPage(nextPage);
+            setPageSize(nextPageSize);
+          }
         }}
         scroll={{ x: 960 }}
         locale={{ emptyText: "No overdue payments" }}

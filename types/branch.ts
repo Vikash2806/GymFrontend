@@ -17,6 +17,11 @@ export type BranchRow = {
   timezone: string;
   status: "active" | "inactive";
   memberCount: number;
+  manager: {
+    id: string;
+    fullName: string;
+    status: "active" | "inactive";
+  } | null;
 };
 
 export type BranchesListResponse = {

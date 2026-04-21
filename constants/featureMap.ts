@@ -7,7 +7,7 @@ export const FEATURE_MAP = {
   finance: ["financial_overview"],
   expenses: ["expenses"],
   staff: ["staff_management"],
-  settings: ["settings"],
+  settings: ["settings", "gym_profile"],
   admin_only: ["user_management", "rbac_settings"]
 } as const;
 

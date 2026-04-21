@@ -18,12 +18,14 @@ import {
   Typography
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { PlusOutlined } from "@ant-design/icons";
+import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
 import apiClient from "@/utils/api";
 import { WIDE_DRAWER_WIDTH } from "@/utils/modalWidths";
 import type {
   ExpenseCategoriesResponse,
+  ExpenseCategorySummaryResponse,
+  ExpenseCategorySummaryRow,
   ExpenseCategory,
   ExpenseMutationResponse,
   ExpenseRow,
@@ -33,6 +35,7 @@ import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
 import { gymMembershipRoleFromSession } from "@/utils/gymRole";
 import { formatInr } from "@/utils/formatCurrency";
+import ExportButton from "@/app/components/Export/ExportButton";
 
 const { Title, Text } = Typography;
 
@@ -77,9 +80,15 @@ export default function ExpensesPanel() {
 
   const [expensesLoading, setExpensesLoading] = useState(false);
   const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
+  const [expensesPage, setExpensesPage] = useState(1);
+  const [expensesPageSize, setExpensesPageSize] = useState(10);
+  const [expensesTotal, setExpensesTotal] = useState(0);
 
   const [categoriesLoading, setCategoriesLoading] = useState(false);
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryRows, setSummaryRows] = useState<ExpenseCategorySummaryRow[]>([]);
+  const [summaryTotal, setSummaryTotal] = useState(0);
 
   const [expenseDrawerOpen, setExpenseDrawerOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<ExpenseRow | null>(null);
@@ -126,19 +135,90 @@ export default function ExpensesPanel() {
     setExpensesLoading(true);
     try {
       const { data } = await apiClient.get<ExpensesListResponse>("/gym/expenses", {
-        params: { year, month }
+        params: { year, month, page: expensesPage, pageSize: expensesPageSize }
       });
       if (data.success && Array.isArray(data.expenses)) {
         setExpenses(data.expenses);
+        setExpensesTotal(typeof data.total === "number" ? data.total : data.expenses.length);
       } else {
         setExpenses([]);
+        setExpensesTotal(0);
       }
     } catch {
       setExpenses([]);
+      setExpensesTotal(0);
     } finally {
       setExpensesLoading(false);
     }
-  }, [year, month]);
+  }, [year, month, expensesPage, expensesPageSize]);
+
+  const loadCategorySummary = useCallback(async () => {
+    setSummaryLoading(true);
+    try {
+      const { data } = await apiClient.get<ExpenseCategorySummaryResponse>("/gym/expenses/category-summary", {
+        params: { year, month }
+      });
+      if (data.success && Array.isArray(data.summary)) {
+        setSummaryRows(data.summary);
+        setSummaryTotal(typeof data.totalAmount === "number" ? data.totalAmount : 0);
+      } else {
+        setSummaryRows([]);
+        setSummaryTotal(0);
+        if (data.message) {
+          message.error(data.message);
+        }
+      }
+    } catch (e: unknown) {
+      const status =
+        e && typeof e === "object" && "response" in e
+          ? (e as { response?: { status?: number } }).response?.status
+          : undefined;
+      if (status === 404) {
+        try {
+          const fallback = await apiClient.get<ExpensesListResponse>("/gym/expenses", {
+            params: { year, month }
+          });
+          if (fallback.data.success && Array.isArray(fallback.data.expenses)) {
+            const map = new Map<string, ExpenseCategorySummaryRow>();
+            for (const row of fallback.data.expenses) {
+              const key = row.categoryId ?? "uncategorized";
+              const name = row.categoryName ?? "Uncategorized";
+              const prev = map.get(key);
+              if (prev) {
+                prev.totalAmount += row.amount;
+                prev.expenseCount += 1;
+              } else {
+                map.set(key, {
+                  categoryId: row.categoryId ?? null,
+                  categoryName: name,
+                  totalAmount: row.amount,
+                  expenseCount: 1
+                });
+              }
+            }
+            const rows = [...map.values()].sort(
+              (a, b) => b.totalAmount - a.totalAmount || b.expenseCount - a.expenseCount
+            );
+            const total = rows.reduce((sum, row) => sum + row.totalAmount, 0);
+            setSummaryRows(rows);
+            setSummaryTotal(total);
+            return;
+          }
+        } catch {
+          // Fall through to generic error handling below.
+        }
+      }
+      setSummaryRows([]);
+      setSummaryTotal(0);
+      const msg =
+        e && typeof e === "object" && "response" in e
+          ? (e as { response?: { data?: { message?: string } } }).response?.data?.message
+          : undefined;
+      message.error(msg ?? "Could not load category-wise aggregation.");
+    } finally {
+      setSummaryLoading(false);
+    }
+  }, [year, month, message]);
 
   useEffect(() => {
     void loadCategories();
@@ -148,30 +228,43 @@ export default function ExpensesPanel() {
     void loadExpenses();
   }, [loadExpenses]);
 
+  useEffect(() => {
+    void loadCategorySummary();
+  }, [loadCategorySummary]);
+
   const openAddExpense = () => {
     setEditingExpense(null);
-    expenseForm.resetFields();
-    expenseForm.setFieldsValue({
-      date: dayjs(),
-      amount: undefined,
-      branchId: isOwner ? undefined : defaultBranchId,
-      categoryId: undefined,
-      notes: undefined
-    });
     setExpenseDrawerOpen(true);
   };
 
   const openEditExpense = (row: ExpenseRow) => {
     setEditingExpense(row);
-    expenseForm.setFieldsValue({
-      amount: row.amount,
-      date: dayjs(row.date),
-      branchId: row.branchId,
-      categoryId: row.categoryId ?? undefined,
-      notes: row.notes || undefined
-    });
     setExpenseDrawerOpen(true);
   };
+
+  useEffect(() => {
+    if (!expenseDrawerOpen) {
+      return;
+    }
+    if (editingExpense) {
+      expenseForm.setFieldsValue({
+        amount: editingExpense.amount,
+        date: dayjs(editingExpense.date),
+        branchId: editingExpense.branchId,
+        categoryId: editingExpense.categoryId ?? undefined,
+        notes: editingExpense.notes || undefined
+      });
+      return;
+    }
+    expenseForm.resetFields();
+    expenseForm.setFieldsValue({
+      date: dayjs(),
+      amount: undefined,
+      branchId: isOwner ? defaultBranchId || undefined : defaultBranchId,
+      categoryId: undefined,
+      notes: undefined
+    });
+  }, [expenseDrawerOpen, editingExpense, expenseForm, isOwner, defaultBranchId]);
 
   const submitExpense = async () => {
     try {
@@ -196,6 +289,7 @@ export default function ExpensesPanel() {
           message.success("Expense updated.");
           setExpenseDrawerOpen(false);
           void loadExpenses();
+          void loadCategorySummary();
         } else if (data.message) {
           message.error(data.message);
         }
@@ -205,6 +299,7 @@ export default function ExpensesPanel() {
           message.success("Expense added.");
           setExpenseDrawerOpen(false);
           void loadExpenses();
+          void loadCategorySummary();
         } else if (data.message) {
           message.error(data.message);
         }
@@ -227,6 +322,7 @@ export default function ExpensesPanel() {
       if (data.success) {
         message.success("Expense deleted.");
         void loadExpenses();
+        void loadCategorySummary();
       } else if (data.message) {
         message.error(data.message);
       }
@@ -237,15 +333,24 @@ export default function ExpensesPanel() {
 
   const openAddCategory = () => {
     setEditingCategory(null);
-    categoryForm.resetFields();
     setCategoryDrawerOpen(true);
   };
 
   const openEditCategory = (row: ExpenseCategory) => {
     setEditingCategory(row);
-    categoryForm.setFieldsValue({ name: row.name, description: row.description });
     setCategoryDrawerOpen(true);
   };
+
+  useEffect(() => {
+    if (!categoryDrawerOpen) {
+      return;
+    }
+    if (editingCategory) {
+      categoryForm.setFieldsValue({ name: editingCategory.name, description: editingCategory.description });
+      return;
+    }
+    categoryForm.resetFields();
+  }, [categoryDrawerOpen, editingCategory, categoryForm]);
 
   const submitCategory = async () => {
     try {
@@ -369,6 +474,23 @@ export default function ExpensesPanel() {
     }
   ];
 
+  const summaryColumns: ColumnsType<ExpenseCategorySummaryRow> = [
+    { title: "Category", dataIndex: "categoryName", key: "categoryName" },
+    {
+      title: "Expenses",
+      dataIndex: "expenseCount",
+      key: "expenseCount",
+      width: 120
+    },
+    {
+      title: "Total Amount",
+      dataIndex: "totalAmount",
+      key: "totalAmount",
+      width: 180,
+      render: (amount: number) => formatInr(amount)
+    }
+  ];
+
   return (
     <div>
       <div
@@ -409,26 +531,62 @@ export default function ExpensesPanel() {
                     <Select
                       style={{ width: 120 }}
                       value={year}
-                      onChange={setYear}
+                      onChange={(value) => {
+                        setExpensesPage(1);
+                        setYear(value);
+                      }}
                       options={yearOptions.map((y) => ({ value: y, label: String(y) }))}
                     />
                     <Select
                       style={{ width: 140 }}
                       value={month}
-                      onChange={setMonth}
+                      onChange={(value) => {
+                        setExpensesPage(1);
+                        setMonth(value);
+                      }}
                       options={MONTHS.map((m) => ({ value: m.value, label: m.label }))}
                     />
+                    <Button
+                      icon={<ReloadOutlined />}
+                      onClick={() => {
+                        void loadExpenses();
+                        void loadCategorySummary();
+                      }}
+                    >
+                      Refresh
+                    </Button>
                   </Space>
-                  <Button type="primary" icon={<PlusOutlined />} onClick={openAddExpense}>
-                    Add expense
-                  </Button>
+                  <Space wrap>
+                    <ExportButton
+                      endpoint="/gym/exports/expenses"
+                      params={{
+                        year,
+                        month
+                      }}
+                      defaultFilename="expenses.csv"
+                    />
+                    <Button type="primary" icon={<PlusOutlined />} onClick={openAddExpense}>
+                      Add expense
+                    </Button>
+                  </Space>
                 </div>
                 <Table<ExpenseRow>
                   rowKey="id"
                   loading={expensesLoading}
                   columns={expenseColumns}
                   dataSource={expenses}
-                  pagination={false}
+                  pagination={{
+                    current: expensesPage,
+                    pageSize: expensesPageSize,
+                    total: expensesTotal,
+                    showSizeChanger: true,
+                    pageSizeOptions: ["10", "20", "50"],
+                    onChange: (page, pageSize) => {
+                      setExpensesPage(page);
+                      setExpensesPageSize(pageSize);
+                    },
+                    showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} expenses`
+                  }}
                   locale={{
                     emptyText: (
                       <Empty
@@ -443,6 +601,40 @@ export default function ExpensesPanel() {
                     )
                   }}
                 />
+                <div style={{ marginTop: 24 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: 10,
+                      gap: 12
+                    }}
+                  >
+                    <Text strong>Category-wise aggregation</Text>
+                    <Text strong>Total: {formatInr(summaryTotal)}</Text>
+                  </div>
+                  <Table<ExpenseCategorySummaryRow>
+                    rowKey={(row) => row.categoryId ?? "uncategorized"}
+                    loading={summaryLoading}
+                    columns={summaryColumns}
+                    dataSource={summaryRows}
+                    pagination={false}
+                    locale={{
+                      emptyText: (
+                        <Empty
+                          image={Empty.PRESENTED_IMAGE_SIMPLE}
+                          description={
+                            <span>
+                              <div>No category totals for selected period</div>
+                              <Text type="secondary">Add expenses to see category-wise totals.</Text>
+                            </span>
+                          }
+                        />
+                      )
+                    }}
+                  />
+                </div>
               </>
             )
           },
@@ -451,7 +643,10 @@ export default function ExpensesPanel() {
             label: "Categories",
             children: (
               <>
-                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, gap: 12 }}>
+                  <Button icon={<ReloadOutlined />} onClick={() => void loadCategories()}>
+                    Refresh
+                  </Button>
                   <Button type="primary" icon={<PlusOutlined />} onClick={openAddCategory}>
                     Add category
                   </Button>

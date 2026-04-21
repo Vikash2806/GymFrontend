@@ -31,6 +31,7 @@ import { isValidIndianMobile, stripToIndianMobileDigits, toE164IndianMobile } fr
 import { normalizeOptionalEmail } from "@/utils/emailValidation";
 import type { StaffUserMutationResponse, StaffUserRow, StaffUsersListResponse } from "@/types/staffUser";
 import { useRouter } from "next/navigation";
+import ExportButton from "@/app/components/Export/ExportButton";
 
 const { Title, Text } = Typography;
 
@@ -47,7 +48,7 @@ const tableComponents: TableProps<StaffUserRow>["components"] = {
 type FormValues = {
   role: "manager" | "staff";
   firstName: string;
-  lastName: string;
+  lastName?: string;
   phone: string;
   email?: string;
   password?: string;
@@ -101,10 +102,11 @@ export default function StaffManagerPanel() {
   }, [canAccess, router]);
 
   useEffect(() => {
-    if (membershipRole === "manager" && defaultBranchId && !branchFilter) {
+    if (defaultBranchId && branchFilter !== defaultBranchId) {
       setBranchFilter(defaultBranchId);
+      setPage(1);
     }
-  }, [defaultBranchId, branchFilter, membershipRole]);
+  }, [defaultBranchId, branchFilter]);
 
   const load = useCallback(async () => {
     if (!canAccess) {
@@ -203,7 +205,7 @@ export default function StaffManagerPanel() {
       if (editing) {
         const payload: Record<string, unknown> = {
           firstName: values.firstName.trim(),
-          lastName: values.lastName.trim(),
+          lastName: (values.lastName ?? "").trim(),
           role: values.role,
           branchId: values.branchId,
           status: values.status ?? "active"
@@ -226,7 +228,7 @@ export default function StaffManagerPanel() {
         const emailNorm = normalizeOptionalEmail(values.email);
         const createBody: Record<string, unknown> = {
           firstName: values.firstName.trim(),
-          lastName: values.lastName.trim(),
+          lastName: (values.lastName ?? "").trim(),
           mobileNumber: e164,
           password: values.password?.trim() ?? "",
           role: values.role,
@@ -389,6 +391,14 @@ export default function StaffManagerPanel() {
           <Button type="primary" icon={<UserAddOutlined />} onClick={openCreate} disabled={!canCreateStaff}>
             Create User
           </Button>
+          <ExportButton
+            endpoint="/gym/staff-users/export"
+            params={{
+              role: roleFilter,
+              branchId: branchFilter || undefined
+            }}
+            defaultFilename="staff-users.csv"
+          />
         </Space>
       </Flex>
 
@@ -455,7 +465,6 @@ export default function StaffManagerPanel() {
           <Form.Item
             name="lastName"
             label="Last Name"
-            rules={[{ required: true, message: "Required" }]}
           >
             <Input autoComplete="family-name" />
           </Form.Item>

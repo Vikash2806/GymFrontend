@@ -17,7 +17,7 @@ type LoginPayload = {
 
 type SignupPayload = {
   firstName: string;
-  lastName: string;
+  lastName?: string;
   mobileNumber: string;
   recoveryEmail?: string;
   password: string;
@@ -148,7 +148,6 @@ export const signupAsync = createAsyncThunk<SessionPayload, SignupPayload>(
     if (useMockAuth) {
       if (
         payload.firstName.trim().length === 0 ||
-        payload.lastName.trim().length === 0 ||
         payload.password.trim().length < 6 ||
         !payload.gymName.trim()
       ) {
@@ -158,7 +157,7 @@ export const signupAsync = createAsyncThunk<SessionPayload, SignupPayload>(
         id: "mock-user",
         email: payload.recoveryEmail?.trim() || null,
         phone: normalizedMobile,
-        fullName: `${payload.firstName} ${payload.lastName}`.trim(),
+        fullName: `${payload.firstName} ${payload.lastName ?? ""}`.trim(),
         profilePhoto: null,
         defaults: { gymId: "mock-gym", branchId: "mock-branch" }
       };
@@ -179,7 +178,7 @@ export const signupAsync = createAsyncThunk<SessionPayload, SignupPayload>(
     try {
       const response = await apiClient.post<SessionPayload>("/auth/signup", {
         firstName: payload.firstName,
-        lastName: payload.lastName,
+        lastName: payload.lastName ?? "",
         mobileNumber: normalizedMobile,
         recoveryEmail: payload.recoveryEmail?.trim(),
         password: payload.password,

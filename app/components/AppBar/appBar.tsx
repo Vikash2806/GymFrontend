@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   App,
   Layout,
@@ -95,15 +95,16 @@ type SearchCategory = {
   key: string;
   label: string;
   route: string;
+  feature?: string;
 };
 
 const searchCategories: SearchCategory[] = [
-  { key: "Dashboard", label: "Dashboard", route: "/pages/dashboard" },
-  { key: "Members", label: "Members", route: "/pages/members" },
-  { key: "Billing", label: "Billing", route: "/pages/billing" },
-  { key: "Branches", label: "Branches", route: "/pages/branches" },
-  { key: "StaffManager", label: "Staff / Manager", route: "/pages/staff-manager" },
-  { key: "Settings", label: "Settings", route: "/pages/settings" }
+  { key: "Dashboard", label: "Dashboard", route: "/pages/dashboard", feature: FEATURES.DASHBOARD },
+  { key: "Members", label: "Members", route: "/pages/members", feature: FEATURES.MEMBER_MANAGEMENT },
+  { key: "Billing", label: "Billing", route: "/pages/billing", feature: FEATURES.BILLING_DASHBOARD },
+  { key: "Branches", label: "Branches", route: "/pages/branches", feature: FEATURES.BRANCH_MANAGEMENT },
+  { key: "StaffManager", label: "Staff / Manager", route: "/pages/staff-manager", feature: FEATURES.STAFF_MANAGEMENT },
+  { key: "Settings", label: "Settings", route: "/pages/settings", feature: FEATURES.SETTINGS }
 ];
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -140,6 +141,12 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
   const activeBranch = session?.activeBranch;
   const branches = gym?.branches ?? [];
   const canManageBranches = hasFeature(session, FEATURES.BRANCH_MANAGEMENT);
+  const canEditGymProfile = hasFeature(session, FEATURES.GYM_PROFILE);
+  const canOpenSettings = hasFeature(session, FEATURES.SETTINGS);
+  const allowedSearchCategories = useMemo(
+    () => searchCategories.filter((item) => !item.feature || hasFeature(session, item.feature)),
+    [session]
+  );
   const assignedBranchId = session?.user?.defaults?.branchId ?? activeBranch?.id ?? "";
   const visibleBranches = canManageBranches
     ? branches
@@ -153,11 +160,10 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
   }, [onHeightChange]);
 
   useEffect(() => {
-    if (gymModalOpen && gym) {
-      gymForm.setFieldsValue({ name: gym.name });
-      setLogoFile(null);
+    if (!allowedSearchCategories.some((item) => item.key === selectedCategory)) {
+      setSelectedCategory(allowedSearchCategories[0]?.key ?? "Dashboard");
     }
-  }, [gymModalOpen, gym, gymForm]);
+  }, [allowedSearchCategories, selectedCategory]);
 
   useEffect(() => {
     const routesToPrefetch = [
@@ -173,12 +179,15 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
   }, [router]);
 
   const handleSearch = () => {
-    const selected = searchCategories.find((item) => item.key === selectedCategory);
+    const selected = allowedSearchCategories.find((item) => item.key === selectedCategory);
     router.push(selected?.route ?? "/pages/dashboard");
   };
 
   const onProfileMenuClick: MenuProps["onClick"] = async ({ key }) => {
     if (key === "settings") {
+      if (!canOpenSettings) {
+        return;
+      }
       if (pathname !== "/pages/settings") {
         router.push("/pages/settings");
       }
@@ -191,7 +200,7 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
   };
 
   const profileMenuItems: MenuProps["items"] = [
-    { key: "settings", label: "Settings", icon: <SettingOutlined /> },
+    ...(canOpenSettings ? [{ key: "settings", label: "Settings", icon: <SettingOutlined /> }] : []),
     { key: "logout", label: "Logout", icon: <LogoutOutlined /> }
   ];
 
@@ -218,6 +227,10 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
   };
 
   const saveGym = async () => {
+    if (!canEditGymProfile) {
+      message.error("You do not have permission to update gym profile.");
+      return;
+    }
     const values = await gymForm.validateFields();
     setSavingGym(true);
     try {
@@ -284,12 +297,12 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
             <Text
               strong
               ellipsis
-              onClick={() => gym && setGymModalOpen(true)}
+              onClick={() => gym && canEditGymProfile && setGymModalOpen(true)}
               style={{
                 fontSize: 15,
                 fontWeight: 600,
                 color: token.colorPrimary,
-                cursor: gym ? "pointer" : "default",
+                cursor: gym && canEditGymProfile ? "pointer" : "default",
                 lineHeight: "24px",
                 flex: "0 1 auto",
                 maxWidth: 220
@@ -422,18 +435,21 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
             overflow: "hidden"
           }}
         >
-          <Dropdown
-            menu={{
-              items: searchCategories.map((item) => ({ key: item.key, label: item.label })),
-              onClick: ({ key }) => setSelectedCategory(key)
+          <Select
+            variant="borderless"
+            value={selectedCategory}
+            options={allowedSearchCategories.map((item) => ({ value: item.key, label: item.label }))}
+            onChange={(value) => {
+              setSelectedCategory(value);
+              const selected = allowedSearchCategories.find((item) => item.key === value);
+              if (selected && pathname !== selected.route) {
+                router.push(selected.route);
+              }
             }}
-            trigger={["click"]}
-          >
-            <Button type="text" style={{ height: 36 }}>
-              <Text style={{ fontSize: 13, color: token.colorTextSecondary }}>{selectedCategory}</Text>
-              <DownOutlined />
-            </Button>
-          </Dropdown>
+            style={{ minWidth: 170, height: 36 }}
+            suffixIcon={<DownOutlined style={{ fontSize: 11, color: token.colorTextSecondary }} />}
+            disabled={allowedSearchCategories.length <= 1}
+          />
           <Input
             placeholder="Search..."
             style={{ width: 200, height: 36, border: "none" }}
@@ -461,13 +477,21 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
               backgroundColor: token.colorBgContainer
             }}
             onClick={() => {
+              if (!canOpenSettings) {
+                return;
+              }
               if (pathname !== "/pages/settings") {
                 router.push("/pages/settings");
               }
             }}
+            disabled={!canOpenSettings}
           />
           <Dropdown menu={{ items: profileMenuItems, onClick: onProfileMenuClick }} trigger={["click"]}>
-            <Avatar size={36} style={{ backgroundColor: token.colorPrimary, cursor: "pointer" }}>
+            <Avatar
+              size={36}
+              src={session?.user?.profilePhoto || undefined}
+              style={{ backgroundColor: token.colorPrimary, cursor: "pointer" }}
+            >
               {initials || <UserOutlined />}
             </Avatar>
           </Dropdown>
@@ -478,19 +502,29 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
         title="Edit gym"
         open={gymModalOpen}
         onOk={saveGym}
-        onCancel={() => setGymModalOpen(false)}
+        onCancel={() => {
+          setGymModalOpen(false);
+          setLogoFile(null);
+        }}
+        afterOpenChange={(open) => {
+          if (open && gym) {
+            gymForm.setFieldsValue({ name: gym.name });
+            setLogoFile(null);
+          }
+        }}
         confirmLoading={savingGym}
         destroyOnHidden
         width={WIDE_MODAL_WIDTH}
       >
         <Form form={gymForm} layout="vertical">
           <Form.Item name="name" label="Gym name" rules={[{ required: true, message: "Enter gym name" }]}>
-            <Input prefix={<ShopOutlined />} />
+            <Input prefix={<ShopOutlined />} disabled={!canEditGymProfile} />
           </Form.Item>
           <Form.Item label="Logo">
             <Upload
               accept="image/*"
               maxCount={1}
+              disabled={!canEditGymProfile}
               beforeUpload={async (file) => {
                 try {
                   const dataUrl = await readFileAsDataUrl(file);
@@ -501,7 +535,7 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
                 return false;
               }}
             >
-              <Button icon={<UploadOutlined />}>Upload new logo</Button>
+              <Button icon={<UploadOutlined />} disabled={!canEditGymProfile}>Upload new logo</Button>
             </Upload>
           </Form.Item>
         </Form>

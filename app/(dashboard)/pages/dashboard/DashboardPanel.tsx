@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import {
@@ -49,6 +49,14 @@ const RevenueTrendChart = dynamic(() => import("../finance/RevenueTrendChart"), 
     </div>
   )
 });
+const NewMemberJoinTrendChart = dynamic(() => import("./NewMemberJoinTrendChart"), {
+  ssr: false,
+  loading: () => (
+    <div style={{ height: 220, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <Spin size="large" />
+    </div>
+  )
+});
 
 const { Title, Text } = Typography;
 
@@ -66,10 +74,18 @@ const MONTHS: { value: number; label: string }[] = [
   { value: 11, label: "November" },
   { value: 12, label: "December" }
 ];
+const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 const TOP_N = 5;
+const KPI_CARD_HEIGHT = 118;
 
 type ListResponse = { success: boolean; members?: Member[]; message?: string };
+type MemberJoinTrendResponse = {
+  success: boolean;
+  trend?: Array<{ month: number; count: number }>;
+  period?: { year: number };
+  message?: string;
+};
 
 function kpiIconWrap(bg: string, icon: React.ReactNode) {
   return (
@@ -108,8 +124,38 @@ export default function DashboardPanel() {
   const [branchId, setBranchId] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [overview, setOverview] = useState<FinanceOverviewPayload | null>(null);
+  const [trendMetric, setTrendMetric] = useState<"revenue" | "members">("revenue");
+  const [loadingRevenueTrend, setLoadingRevenueTrend] = useState(false);
+  const [revenueTrendData, setRevenueTrendData] = useState<
+    { month: number; label: string; amount: number; year: number }[]
+  >([]);
+  const [loadingMemberTrend, setLoadingMemberTrend] = useState(false);
+  const [memberTrendData, setMemberTrendData] = useState<
+    { month: number; label: string; count: number; year: number }[]
+  >([]);
   const [memberCount, setMemberCount] = useState<number | null>(null);
   const [loadingMembers, setLoadingMembers] = useState(false);
+  const activeBranchId = session?.activeBranch?.id ?? session?.user?.defaults?.branchId ?? "";
+  const lastSyncedActiveBranchId = useRef<string>("");
+  const overviewReqSeq = useRef(0);
+  const revenueTrendReqSeq = useRef(0);
+
+  useEffect(() => {
+    if (!isOwner) {
+      setBranchId(undefined);
+      lastSyncedActiveBranchId.current = "";
+      return;
+    }
+    if (!lastSyncedActiveBranchId.current) {
+      setBranchId(activeBranchId || undefined);
+      lastSyncedActiveBranchId.current = activeBranchId;
+      return;
+    }
+    if (activeBranchId !== lastSyncedActiveBranchId.current) {
+      setBranchId(activeBranchId || undefined);
+      lastSyncedActiveBranchId.current = activeBranchId;
+    }
+  }, [isOwner, activeBranchId]);
 
   const branchOptions = useMemo(() => {
     const br = session?.gym?.branches ?? [];
@@ -124,6 +170,7 @@ export default function DashboardPanel() {
   }, [isOwner, branchId, session?.activeBranch?.id, session?.user?.defaults?.branchId]);
 
   const loadOverview = useCallback(async () => {
+    const reqId = ++overviewReqSeq.current;
     setLoading(true);
     try {
       const params: Record<string, string | number> = { year, month };
@@ -131,22 +178,107 @@ export default function DashboardPanel() {
         params.branchId = branchId;
       }
       const { data } = await apiClient.get<FinanceOverviewResponse>("/gym/finance/overview", { params });
+      if (reqId !== overviewReqSeq.current) {
+        return;
+      }
       if (data.success && data.overview) {
         setOverview(data.overview);
       } else {
         setOverview(null);
       }
     } catch {
+      if (reqId !== overviewReqSeq.current) {
+        return;
+      }
       setOverview(null);
       message.error("Could not load dashboard metrics.");
     } finally {
-      setLoading(false);
+      if (reqId === overviewReqSeq.current) {
+        setLoading(false);
+      }
     }
   }, [year, month, branchId, isOwner, message]);
 
   useEffect(() => {
     void loadOverview();
   }, [loadOverview]);
+
+  const loadRevenueTrend = useCallback(async () => {
+    const reqId = ++revenueTrendReqSeq.current;
+    setLoadingRevenueTrend(true);
+    try {
+      const requests = Array.from({ length: 12 }, (_, i) => {
+        const monthValue = i + 1;
+        const params: Record<string, string | number> = { year, month: monthValue };
+        if (isOwner && branchId) {
+          params.branchId = branchId;
+        }
+        return apiClient.get<FinanceOverviewResponse>("/gym/finance/overview", { params });
+      });
+
+      const results = await Promise.all(requests);
+      if (reqId !== revenueTrendReqSeq.current) {
+        return;
+      }
+      const nextData = results.map((result, index) => ({
+        month: index + 1,
+        label: MONTH_SHORT[index],
+        amount: result.data.success && result.data.overview ? result.data.overview.totals.revenue : 0,
+        year
+      }));
+      setRevenueTrendData(nextData);
+    } catch {
+      if (reqId !== revenueTrendReqSeq.current) {
+        return;
+      }
+      setRevenueTrendData([]);
+      message.error("Could not load yearly revenue trend.");
+    } finally {
+      if (reqId === revenueTrendReqSeq.current) {
+        setLoadingRevenueTrend(false);
+      }
+    }
+  }, [year, isOwner, branchId, message]);
+
+  useEffect(() => {
+    if (trendMetric === "revenue") {
+      void loadRevenueTrend();
+    }
+  }, [trendMetric, loadRevenueTrend]);
+
+  const loadMemberJoinTrend = useCallback(async () => {
+    setLoadingMemberTrend(true);
+    try {
+      const params: Record<string, string | number> = { year };
+      if (resolvedBranchForMembers) {
+        params.branchId = resolvedBranchForMembers;
+      }
+      const { data } = await apiClient.get<MemberJoinTrendResponse>("/gym/members/join-trend", { params });
+      if (data.success && Array.isArray(data.trend)) {
+        setMemberTrendData(
+          data.trend.map((item) => ({
+            month: item.month,
+            label: MONTH_SHORT[item.month - 1] ?? String(item.month),
+            count: item.count,
+            year
+          }))
+        );
+      } else {
+        setMemberTrendData([]);
+      }
+    } catch {
+      setMemberTrendData([]);
+      message.error("Could not load monthly joined members trend.");
+    } finally {
+      setLoadingMemberTrend(false);
+    }
+  }, [year, resolvedBranchForMembers, message]);
+
+  useEffect(() => {
+    if (trendMetric === "members") {
+      void loadMemberJoinTrend();
+    }
+  }, [trendMetric, loadMemberJoinTrend]);
 
   const loadMemberCount = useCallback(async () => {
     if (!resolvedBranchForMembers) {
@@ -173,17 +305,6 @@ export default function DashboardPanel() {
   useEffect(() => {
     void loadMemberCount();
   }, [loadMemberCount]);
-
-  const chartData = useMemo(() => {
-    if (!overview) {
-      return [];
-    }
-    return overview.revenueByDay.map((d) => ({
-      day: d.day,
-      label: String(d.day),
-      amount: d.amount
-    }));
-  }, [overview]);
 
   const periodLabel = useMemo(() => {
     if (!overview) {
@@ -235,6 +356,12 @@ export default function DashboardPanel() {
   const pendingPreview = overview?.pendingMembers.slice(0, TOP_N) ?? [];
 
   const gymName = session?.gym?.name ?? "Your gym";
+  const chartLoading = trendMetric === "revenue" ? loadingRevenueTrend : loadingMemberTrend;
+  const chartTitle = trendMetric === "revenue" ? "Monthly revenue trends" : "Monthly new members joined";
+  const chartEmpty =
+    trendMetric === "revenue"
+      ? "No monthly revenue data for this year"
+      : "No monthly joined member data for this year";
 
   return (
     <div>
@@ -281,8 +408,8 @@ export default function DashboardPanel() {
       </div>
 
       <Row gutter={[16, 16]}>
-        <Col xs={24} sm={12} lg={6}>
-          <Card loading={loading} styles={{ body: { padding: 18 } }}>
+        <Col xs={24} sm={12} lg={6} style={{ display: "flex" }}>
+          <Card loading={loading} style={{ width: "100%", height: "100%" }} styles={{ body: { padding: 18, minHeight: KPI_CARD_HEIGHT } }}>
             <Space align="start" size="middle" style={{ width: "100%" }}>
               {kpiIconWrap("#22c55e", <RiseOutlined />)}
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -296,8 +423,8 @@ export default function DashboardPanel() {
             </Space>
           </Card>
         </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <Card loading={loading} styles={{ body: { padding: 18 } }}>
+        <Col xs={24} sm={12} lg={6} style={{ display: "flex" }}>
+          <Card loading={loading} style={{ width: "100%", height: "100%" }} styles={{ body: { padding: 18, minHeight: KPI_CARD_HEIGHT } }}>
             <Space align="start" size="middle" style={{ width: "100%" }}>
               {kpiIconWrap("#ef4444", <WalletOutlined />)}
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -311,8 +438,8 @@ export default function DashboardPanel() {
             </Space>
           </Card>
         </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <Card loading={loading} styles={{ body: { padding: 18 } }}>
+        <Col xs={24} sm={12} lg={6} style={{ display: "flex" }}>
+          <Card loading={loading} style={{ width: "100%", height: "100%" }} styles={{ body: { padding: 18, minHeight: KPI_CARD_HEIGHT } }}>
             <Space align="start" size="middle" style={{ width: "100%" }}>
               {kpiIconWrap("#f97316", <ClockCircleOutlined />)}
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -326,8 +453,12 @@ export default function DashboardPanel() {
             </Space>
           </Card>
         </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <Card loading={loading || loadingMembers} styles={{ body: { padding: 18 } }}>
+        <Col xs={24} sm={12} lg={6} style={{ display: "flex" }}>
+          <Card
+            loading={loading || loadingMembers}
+            style={{ width: "100%", height: "100%" }}
+            styles={{ body: { padding: 18, minHeight: KPI_CARD_HEIGHT } }}
+          >
             <Space align="start" size="middle" style={{ width: "100%" }}>
               {kpiIconWrap("#3b82f6", <TeamOutlined />)}
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -348,92 +479,56 @@ export default function DashboardPanel() {
       </Row>
 
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        <Col xs={24} lg={16}>
+        <Col xs={24} lg={14}>
           <Card
-            loading={loading}
+            loading={chartLoading}
             styles={{ body: { paddingTop: 12 } }}
             title={
-              <div>
-                <Title level={5} style={{ margin: 0 }}>
-                  Revenue trend
-                </Title>
-                <Text type="secondary">{periodLabel || "Selected period"}</Text>
-              </div>
-            }
-          >
-            {chartData.length > 0 ? (
-              <RevenueTrendChart chartData={chartData} gridStroke={token.colorBorderSecondary} height={220} />
-            ) : (
-              <Empty description="No revenue data for this period" />
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} lg={8}>
-          <Card
-            title={
-              <Title level={5} style={{ margin: 0 }}>
-                Attendance
-              </Title>
-            }
-            styles={{ body: { paddingTop: 12 } }}
-          >
-            <Text type="secondary">Check-ins and attendance tracking will appear here once the module is available.</Text>
-          </Card>
-        </Col>
-      </Row>
-
-      {overview && overview.pendingSummary.totalMembers > 0 ? (
-        <Card size="small" style={{ marginTop: 16 }} styles={{ body: { padding: "12px 16px" } }}>
-          <Space wrap size="large">
-            <Text>
-              <Text strong>{overview.pendingSummary.totalMembers}</Text> members with pending payment
-            </Text>
-            <Text>
-              Total pending: <Text strong>{formatInr(overview.pendingSummary.totalPending)}</Text>
-            </Text>
-            <Text type="secondary">
-              Avg pending: {formatInr(overview.pendingSummary.averagePending)}
-            </Text>
-          </Space>
-        </Card>
-      ) : null}
-
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        <Col xs={24} lg={12}>
-          <Card
-            loading={loading}
-            title={
-              <Space>
-                <Title level={5} style={{ margin: 0 }}>
-                  Recent payments
-                </Title>
-                <Text type="secondary">(first {TOP_N})</Text>
+              <Space
+                align="center"
+                style={{ width: "100%", justifyContent: "space-between" }}
+              >
+                <div>
+                  <Title level={5} style={{ margin: 0 }}>
+                    {chartTitle}
+                  </Title>
+                  <Text type="secondary">Year {year}</Text>
+                </div>
+                <Select
+                  value={trendMetric}
+                  style={{ width: 220 }}
+                  onChange={(v) => setTrendMetric(v)}
+                  options={[
+                    { value: "revenue", label: "Revenue trend" },
+                    { value: "members", label: "New members joined" }
+                  ]}
+                />
               </Space>
             }
-            extra={
-              <Link href="/pages/finance">
-                <Button type="link" icon={<FundOutlined />}>
-                  Financial overview <ArrowRightOutlined />
-                </Button>
-              </Link>
-            }
           >
-            {paymentsPreview.length > 0 ? (
-              <Table
-                size="small"
-                rowKey="id"
-                pagination={false}
-                columns={paymentsColumns}
-                dataSource={paymentsPreview}
-              />
+            {(trendMetric === "revenue" ? revenueTrendData.length : memberTrendData.length) > 0 ? (
+              trendMetric === "revenue" ? (
+                <RevenueTrendChart
+                  chartData={revenueTrendData}
+                  gridStroke={token.colorBorderSecondary}
+                  height={220}
+                />
+              ) : (
+                <NewMemberJoinTrendChart
+                  chartData={memberTrendData}
+                  gridStroke={token.colorBorderSecondary}
+                  height={220}
+                />
+              )
             ) : (
-              <Empty description="No payments this period" />
+              <Empty description={chartEmpty} />
             )}
           </Card>
         </Col>
-        <Col xs={24} lg={12}>
+        <Col xs={24} lg={10} style={{ display: "flex" }}>
           <Card
             loading={loading}
+            style={{ width: "100%", height: "100%" }}
             title={
               <Space>
                 <Title level={5} style={{ margin: 0 }}>
@@ -465,20 +560,57 @@ export default function DashboardPanel() {
         </Col>
       </Row>
 
-      <Space wrap style={{ marginTop: 20 }}>
-        <Link href="/pages/members">
-          <Button type="default">Members</Button>
-        </Link>
-        <Link href="/pages/billing">
-          <Button type="default">Billing</Button>
-        </Link>
-        <Link href="/pages/finance">
-          <Button type="default">Financial overview</Button>
-        </Link>
-        <Link href="/pages/expenses">
-          <Button type="default">Expenses</Button>
-        </Link>
-      </Space>
+      {overview && overview.pendingSummary.totalMembers > 0 ? (
+        <Card size="small" style={{ marginTop: 16 }} styles={{ body: { padding: "12px 16px" } }}>
+          <Space wrap size="large">
+            <Text>
+              <Text strong>{overview.pendingSummary.totalMembers}</Text> members with pending payment
+            </Text>
+            <Text>
+              Total pending: <Text strong>{formatInr(overview.pendingSummary.totalPending)}</Text>
+            </Text>
+            <Text type="secondary">
+              Avg pending: {formatInr(overview.pendingSummary.averagePending)}
+            </Text>
+          </Space>
+        </Card>
+      ) : null}
+
+      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        <Col xs={24}>
+          <Card
+            loading={loading}
+            title={
+              <Space>
+                <Title level={5} style={{ margin: 0 }}>
+                  Recent payments
+                </Title>
+                <Text type="secondary">(first {TOP_N})</Text>
+              </Space>
+            }
+            extra={
+              <Link href="/pages/finance">
+                <Button type="link" icon={<FundOutlined />}>
+                  Financial overview <ArrowRightOutlined />
+                </Button>
+              </Link>
+            }
+          >
+            {paymentsPreview.length > 0 ? (
+              <Table
+                size="small"
+                rowKey="id"
+                pagination={false}
+                columns={paymentsColumns}
+                dataSource={paymentsPreview}
+              />
+            ) : (
+              <Empty description="No payments this period" />
+            )}
+          </Card>
+        </Col>
+      </Row>
+
     </div>
   );
 }

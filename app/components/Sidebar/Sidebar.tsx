@@ -9,7 +9,6 @@ import {
   ArrowRightOutlined,
   BankOutlined,
   TeamOutlined,
-  ShopOutlined,
   MoneyCollectOutlined,
   UserAddOutlined,
   FundOutlined,
@@ -61,11 +60,6 @@ const mainMenuItems: MenuItem[] = [
   { key: "Settings", label: "Settings", icon: <SettingOutlined />, route: "/pages/settings" }
 ];
 
-const settingsMenuItems: MenuItem[] = [
-  { key: "Back", label: "Settings", icon: <ArrowLeftOutlined /> },
-  { key: "GymSettings", label: "Gym Settings", icon: <ShopOutlined />, route: "/pages/settings" }
-];
-
 const flattenRoutes = (items: MenuItem[], map: Record<string, string>) => {
   items.forEach((item) => {
     if (item.route) {
@@ -102,7 +96,6 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
 
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [openKeys, setOpenKeys] = useState<string[]>([]);
-  const [showSettingsOnly, setShowSettingsOnly] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
   const mainMenuItemsFiltered = useMemo(() => {
@@ -141,7 +134,6 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
   const routeMap = useMemo(() => {
     const map: Record<string, string> = {};
     flattenRoutes(mainMenuItemsFiltered, map);
-    flattenRoutes(settingsMenuItems, map);
     return map;
   }, [mainMenuItemsFiltered]);
 
@@ -150,31 +142,17 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
     if (matched) {
       setSelectedKeys([matched[0]]);
     }
-    if (pathname?.startsWith("/pages/settings")) {
-      setShowSettingsOnly(true);
-    }
   }, [pathname, routeMap]);
 
   const handleClick: MenuProps["onClick"] = (e) => {
     setSelectedKeys([e.key]);
-    if (e.key === "Settings") {
-      setShowSettingsOnly(true);
-      if (pathname !== "/pages/settings") {
-        startTransition(() => {
-          router.push("/pages/settings");
-        });
-      }
+    const targetRoute = routeMap[e.key];
+    if (!targetRoute || pathname === targetRoute) {
       return;
     }
-    if (e.key === "Back") {
-      setShowSettingsOnly(false);
-      if (pathname !== "/pages/dashboard") {
-        startTransition(() => {
-          router.push("/pages/dashboard");
-        });
-      }
-      return;
-    }
+    startTransition(() => {
+      router.push(targetRoute);
+    });
   };
 
   const toggleCollapse = () => {
@@ -183,7 +161,7 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
     onCollapseChange?.(nextCollapsed);
   };
 
-  const menuData = showSettingsOnly ? toMenuData(settingsMenuItems) : toMenuData(mainMenuItemsFiltered);
+  const menuData = toMenuData(mainMenuItemsFiltered);
 
   return (
     <Sider

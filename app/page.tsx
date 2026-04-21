@@ -9,7 +9,6 @@ import {
   Menu,
   X,
   ArrowRight,
-  Play,
   TrendingUp,
   Users,
   DollarSign,
@@ -24,7 +23,6 @@ import {
   Zap,
   Sparkles,
   ChevronDown,
-  MapPin,
   Star,
   Quote,
   Clock,
@@ -265,19 +263,6 @@ const Hero = () => (
           transition={{ duration: 0.7 }}
           className="text-center lg:text-left"
         >
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.15 }}
-            className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 mb-8 text-sm"
-            style={glassStyle}
-          >
-            <span className="w-2 h-2 rounded-full bg-accent animate-pulse-glow" />
-            <span className="text-muted-foreground">
-              Trusted by{" "}
-              <span className="text-foreground font-medium">1,000+ gyms</span>
-            </span>
-          </motion.div>
           <h1 className="font-display text-4xl sm:text-5xl lg:text-[3.5rem] xl:text-6xl font-bold leading-[1.08] mb-6 tracking-tight">
             Manage Your Gym. <TextGradient>Grow Your Revenue.</TextGradient>{" "}
             Automate Everything.
@@ -296,14 +281,6 @@ const Hero = () => (
             >
               Start Free Trial
               <ArrowRight className="w-5 h-5 ml-1 group-hover:translate-x-1 transition-transform" />
-            </Btn>
-            <Btn
-              size="lg"
-              variant="outline"
-              className="text-base font-semibold border-border hover:border-primary/40 hover:bg-primary/5 group"
-            >
-              <Play className="w-4 h-4 mr-2 text-primary" />
-              Book Demo
             </Btn>
           </div>
           <div className="flex flex-wrap gap-6 justify-center lg:justify-start">
@@ -510,33 +487,9 @@ const testimonials = [
   },
 ];
 
-const metrics = [
-  { value: "1,000+", label: "Gyms Onboarded" },
-  { value: "2.5M+", label: "Members Managed" },
-  { value: "₹120Cr+", label: "Revenue Processed" },
-  { value: "99.9%", label: "Uptime" },
-];
-
 const SocialProof = () => (
-  <section className="py-20 sm:py-28 border-t border-border/50">
+  <section className="pt-10 pb-20 sm:pt-14 sm:pb-28 border-t border-border/50">
     <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mb-20">
-        {metrics.map((m, i) => (
-          <motion.div
-            key={m.label}
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ delay: i * 0.1 }}
-            className="text-center"
-          >
-            <p className="font-display text-3xl sm:text-4xl font-bold mb-1">
-              <TextGradient>{m.value}</TextGradient>
-            </p>
-            <p className="text-sm text-muted-foreground">{m.label}</p>
-          </motion.div>
-        ))}
-      </div>
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         whileInView={{ opacity: 1, y: 0 }}
@@ -1318,7 +1271,7 @@ const plans = [
       "White-label option",
       "SLA guarantee",
     ],
-    cta: "Book Demo",
+    cta: "Contact Sales",
     popular: false,
   },
 ];
@@ -1570,14 +1523,6 @@ const CTA = () => (
             Start Free Trial
             <ArrowRight className="w-5 h-5 ml-1 group-hover:translate-x-1 transition-transform" />
           </Btn>
-          <Btn
-            size="lg"
-            variant="outline"
-            className="text-base font-semibold border-border hover:border-primary/50 group"
-          >
-            <Play className="w-4 h-4 mr-2 text-primary" />
-            Book Demo
-          </Btn>
         </div>
         <p className="text-xs text-muted-foreground mt-6">
           No credit card required · Setup in under 24 hours · Cancel anytime
@@ -1660,70 +1605,6 @@ const Footer = () => (
   </footer>
 );
 
-const liveActivities = [
-  { gym: "Iron Fitness", city: "Chennai" },
-  { gym: "FlexStudio", city: "Mumbai" },
-  { gym: "PowerHouse Gym", city: "Bangalore" },
-  { gym: "FitZone Pro", city: "Delhi" },
-  { gym: "Muscle Factory", city: "Hyderabad" },
-  { gym: "The Grind", city: "Pune" },
-];
-
-const LiveActivity = () => {
-  const [current, setCurrent] = useState(0);
-  const [visible, setVisible] = useState(true);
-  const [dismissed, setDismissed] = useState(false);
-  useEffect(() => {
-    if (dismissed) return;
-    const interval = setInterval(() => {
-      setVisible(false);
-      setTimeout(() => {
-        setCurrent((prev) => (prev + 1) % liveActivities.length);
-        setVisible(true);
-      }, 500);
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [dismissed]);
-  if (dismissed) return null;
-  const activity = liveActivities[current];
-  return (
-    <div className="fixed bottom-6 left-6 z-40">
-      <AnimatePresence>
-        {visible && (
-          <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.95 }}
-            className="rounded-xl px-4 py-3 flex items-center gap-3 shadow-xl max-w-xs"
-            style={glassElevatedStyle}
-          >
-            <div className="relative">
-              <div className="w-2.5 h-2.5 rounded-full bg-accent" />
-              <div className="w-2.5 h-2.5 rounded-full bg-accent absolute inset-0 animate-live-pulse" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-foreground truncate">
-                {activity.gym} just signed up
-              </p>
-              <p className="text-[10px] text-muted-foreground flex items-center gap-1">
-                <MapPin className="w-3 h-3" /> {activity.city}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setDismissed(true)}
-              className="text-muted-foreground hover:text-foreground"
-              aria-label="Dismiss"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-};
-
 const StickyCtaBar = () => {
   const [show, setShow] = useState(false);
   useEffect(() => {
@@ -1798,7 +1679,6 @@ export default function FitForgeLandingPage() {
       <FAQ />
       <CTA />
       <Footer />
-      <LiveActivity />
       <StickyCtaBar />
     </div>
   );

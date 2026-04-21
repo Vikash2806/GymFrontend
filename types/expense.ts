@@ -30,6 +30,9 @@ export type ExpensesListResponse = {
   success: boolean;
   message?: string;
   expenses?: ExpenseRow[];
+  total?: number;
+  page?: number;
+  pageSize?: number;
 };
 
 export type ExpenseMutationResponse = {
@@ -37,4 +40,20 @@ export type ExpenseMutationResponse = {
   message?: string;
   expense?: ExpenseRow;
   category?: ExpenseCategory;
+};
+
+export type ExpenseCategorySummaryRow = {
+  categoryId: string | null;
+  categoryName: string;
+  totalAmount: number;
+  expenseCount: number;
+};
+
+export type ExpenseCategorySummaryResponse = {
+  success: boolean;
+  message?: string;
+  year?: number;
+  month?: number;
+  summary?: ExpenseCategorySummaryRow[];
+  totalAmount?: number;
 };
