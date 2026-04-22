@@ -6,9 +6,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { loginAsync, selectIsLoggedIn, selectLoadingState } from "@/redux/features/auth/authSlice";
+import {
+  loginAsync,
+  selectIsLoggedIn,
+  selectLoadingState,
+  selectSession
+} from "@/redux/features/auth/authSlice";
 import type { AppDispatch } from "@/redux/store";
 import { normalizeIndianMobileNumber, stripToIndianMobileDigits } from "@/utils/mobileValidation";
+import { getFirstAccessibleRoute } from "@/utils/permissions";
 import styles from "./auth.module.css";
 
 const { Title, Text } = Typography;
@@ -23,13 +29,14 @@ export default function SignInCard() {
   const router = useRouter();
   const isLoading = useSelector(selectLoadingState);
   const isLoggedIn = useSelector(selectIsLoggedIn);
+  const session = useSelector(selectSession);
   const [form] = Form.useForm<SignInFormValues>();
 
   useEffect(() => {
     if (isLoggedIn) {
-      router.replace("/pages/dashboard");
+      router.replace(getFirstAccessibleRoute(session));
     }
-  }, [isLoggedIn, router]);
+  }, [isLoggedIn, router, session]);
 
   const onFinish = async (values: SignInFormValues) => {
     const normalized = normalizeIndianMobileNumber(values.mobileNumber);

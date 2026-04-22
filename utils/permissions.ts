@@ -103,6 +103,28 @@ export function hasFeature(session: SessionPayload | null, permission: Permissio
 
 export const hasPermission = hasFeature;
 
+const FEATURE_ROUTE_ORDER: Array<{ feature: FeatureKey; route: string }> = [
+  { feature: FEATURES.DASHBOARD, route: "/pages/dashboard" },
+  { feature: FEATURES.MEMBER_MANAGEMENT, route: "/pages/members" },
+  { feature: FEATURES.BILLING_DASHBOARD, route: "/pages/billing" },
+  { feature: FEATURES.FINANCIAL_OVERVIEW, route: "/pages/finance" },
+  { feature: FEATURES.EXPENSES, route: "/pages/expenses" },
+  { feature: FEATURES.BRANCH_MANAGEMENT, route: "/pages/branches" },
+  { feature: FEATURES.STAFF_MANAGEMENT, route: "/pages/staff-manager" },
+  { feature: FEATURES.SETTINGS, route: "/pages/settings" },
+  { feature: FEATURES.RBAC_SETTINGS, route: "/admin/rbac" }
+];
+
+export function getFirstAccessibleRoute(session: SessionPayload | null): string {
+  const features = featuresFromSession(session);
+  for (const entry of FEATURE_ROUTE_ORDER) {
+    if (features.includes(entry.feature as FeatureKey)) {
+      return entry.route;
+    }
+  }
+  return "/pages/settings";
+}
+
 type SidebarModule = "members" | "plans" | "subscriptions" | "payments" | "finance" | "expenses" | "branches" | "staff" | "settings";
 
 const MODULE_TO_FEATURE: Record<SidebarModule, FeatureKey> = {

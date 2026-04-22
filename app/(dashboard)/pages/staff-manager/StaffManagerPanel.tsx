@@ -26,7 +26,7 @@ import { WIDE_MODAL_WIDTH } from "@/utils/modalWidths";
 import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
 import { canAccessStaffUsersModule, gymMembershipRoleFromSession } from "@/utils/gymRole";
-import { FEATURES, hasFeature } from "@/utils/permissions";
+import { FEATURES, getFirstAccessibleRoute, hasFeature } from "@/utils/permissions";
 import { isValidIndianMobile, stripToIndianMobileDigits, toE164IndianMobile } from "@/utils/mobileValidation";
 import { normalizeOptionalEmail } from "@/utils/emailValidation";
 import type { StaffUserMutationResponse, StaffUserRow, StaffUsersListResponse } from "@/types/staffUser";
@@ -52,9 +52,21 @@ type FormValues = {
   phone: string;
   email?: string;
   password?: string;
-  branchId: string;
+  branchIds: string[];
   status?: "active" | "inactive";
 };
+
+function extractApiErrorMessage(error: unknown): string | null {
+  if (!(error && typeof error === "object" && "response" in error)) {
+    return null;
+  }
+  const payload = (error as { response?: { data?: { message?: unknown } } }).response?.data;
+  const msg = payload?.message;
+  if (typeof msg === "string" && msg.trim()) {
+    return msg;
+  }
+  return null;
+}
 
 function splitFullName(full: string): { firstName: string; lastName: string } {
   const t = full.trim();
@@ -75,8 +87,24 @@ export default function StaffManagerPanel() {
   const router = useRouter();
   const session = useAppSelector(selectSession);
   const membershipRole = gymMembershipRoleFromSession(session);
+  const isOwner = membershipRole === "owner";
+  const gymId = session?.user?.defaults?.gymId ?? session?.gym?.id ?? "";
   const defaultBranchId = session?.activeBranch?.id ?? session?.user?.defaults?.branchId ?? "";
-  const branchOptions = session?.gym?.branches ?? [];
+  const branchOptions = useMemo(() => {
+    const allBranches = session?.gym?.branches ?? [];
+    if (isOwner) {
+      return allBranches;
+    }
+    const membership = session?.user?.associatedGyms?.find((g) => g.gymId === gymId);
+    const allowedBranchIds = new Set((membership?.branches ?? []).map((entry) => entry.branchId));
+    if (allowedBranchIds.size === 0) {
+      if (defaultBranchId) {
+        return allBranches.filter((branch) => branch.id === defaultBranchId);
+      }
+      return [];
+    }
+    return allBranches.filter((branch) => allowedBranchIds.has(branch.id));
+  }, [session?.gym?.branches, session?.user?.associatedGyms, gymId, isOwner, defaultBranchId]);
 
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<StaffUserRow[]>([]);
@@ -84,7 +112,6 @@ export default function StaffManagerPanel() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [roleFilter, setRoleFilter] = useState<"all" | "manager" | "staff">("all");
-  const [branchFilter, setBranchFilter] = useState<string>("");
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<StaffUserRow | null>(null);
@@ -97,16 +124,9 @@ export default function StaffManagerPanel() {
 
   useEffect(() => {
     if (!canAccess) {
-      router.replace("/pages/dashboard");
+      router.replace(getFirstAccessibleRoute(session));
     }
-  }, [canAccess, router]);
-
-  useEffect(() => {
-    if (defaultBranchId && branchFilter !== defaultBranchId) {
-      setBranchFilter(defaultBranchId);
-      setPage(1);
-    }
-  }, [defaultBranchId, branchFilter]);
+  }, [canAccess, router, session]);
 
   const load = useCallback(async () => {
     if (!canAccess) {
@@ -119,7 +139,7 @@ export default function StaffManagerPanel() {
           page,
           pageSize,
           role: roleFilter,
-          branchId: branchFilter || undefined
+          branchId: defaultBranchId || undefined
         }
       });
       if (!data.success) {
@@ -133,13 +153,11 @@ export default function StaffManagerPanel() {
     } finally {
       setLoading(false);
     }
-  }, [canAccess, message, page, pageSize, roleFilter, branchFilter]);
+  }, [canAccess, message, page, pageSize, roleFilter, defaultBranchId]);
 
   useEffect(() => {
     void load();
   }, [load]);
-
-  const isOwner = membershipRole === "owner";
 
   const roleSelectOptions = useMemo(() => {
     if (isOwner) {
@@ -173,7 +191,10 @@ export default function StaffManagerPanel() {
         lastName,
         phone: editing.phone.replace(/^\+91/, ""),
         email: editing.email?.trim() ? editing.email : undefined,
-        branchId: editing.branch.id,
+        branchIds:
+          editing.branches && editing.branches.length > 0
+            ? editing.branches.map((branch) => branch.id)
+            : [editing.branch.id],
         status: editing.status,
         password: undefined
       });
@@ -181,7 +202,7 @@ export default function StaffManagerPanel() {
       form.resetFields();
       form.setFieldsValue({
         role: isOwner ? "manager" : "staff",
-        branchId: defaultBranchId || undefined,
+        branchIds: defaultBranchId ? [defaultBranchId] : [],
         firstName: "",
         lastName: "",
         phone: "",
@@ -207,7 +228,7 @@ export default function StaffManagerPanel() {
           firstName: values.firstName.trim(),
           lastName: (values.lastName ?? "").trim(),
           role: values.role,
-          branchId: values.branchId,
+          branchIds: values.branchIds,
           status: values.status ?? "active"
         };
         const em = String(values.email ?? "").trim();
@@ -232,7 +253,7 @@ export default function StaffManagerPanel() {
           mobileNumber: e164,
           password: values.password?.trim() ?? "",
           role: values.role,
-          branchId: values.branchId
+          branchIds: values.branchIds
         };
         if (emailNorm) {
           createBody.email = emailNorm;
@@ -247,8 +268,11 @@ export default function StaffManagerPanel() {
       setModalOpen(false);
       setEditing(null);
       await load();
-    } catch {
-      message.error("Request failed.");
+    } catch (e: unknown) {
+      if (e && typeof e === "object" && "errorFields" in e) {
+        return;
+      }
+      message.error(extractApiErrorMessage(e) ?? "Request failed.");
     } finally {
       setSubmitting(false);
     }
@@ -292,15 +316,28 @@ export default function StaffManagerPanel() {
         r ? <Tag color={r === "manager" ? "blue" : "default"}>{r === "manager" ? "Manager" : "Staff"}</Tag> : "—"
     },
     {
-      title: "Branch",
-      key: "branch",
-      ellipsis: true,
-      render: (_, row) => (
-        <span>
-          {row.branch.code ? `${row.branch.code} — ` : ""}
-          {row.branch.name || row.branch.id}
-        </span>
-      )
+      title: "Branches",
+      key: "branches",
+      render: (_, row) => {
+        const assignedBranches = row.branches?.length
+          ? row.branches
+          : row.branch?.id
+            ? [row.branch]
+            : [];
+        if (assignedBranches.length === 0) {
+          return "—";
+        }
+        return (
+          <Space size={[6, 6]} wrap>
+            {assignedBranches.map((branch) => (
+              <Tag key={branch.id}>
+                {branch.code ? `${branch.code} — ` : ""}
+                {branch.name || branch.id}
+              </Tag>
+            ))}
+          </Space>
+        );
+      }
     },
     {
       title: "Status",
@@ -331,9 +368,8 @@ export default function StaffManagerPanel() {
             icon={<EditOutlined />}
             onClick={() => openEdit(record)}
             disabled={!canUpdateStaff}
-          >
-            Edit
-          </Button>
+            aria-label="Edit user"
+          />
           <Popconfirm
             title="Deactivate this user?"
             description="They will not be able to sign in while inactive."
@@ -341,9 +377,14 @@ export default function StaffManagerPanel() {
             cancelText="Cancel"
             onConfirm={() => void onDelete(record)}
           >
-            <Button type="link" size="small" danger icon={<DeleteOutlined />} disabled={!canUpdateStaff}>
-              Delete
-            </Button>
+            <Button
+              type="link"
+              size="small"
+              danger
+              icon={<DeleteOutlined />}
+              disabled={!canUpdateStaff}
+              aria-label="Deactivate user"
+            />
           </Popconfirm>
         </Space>
       )
@@ -374,20 +415,6 @@ export default function StaffManagerPanel() {
               { value: "staff", label: "Staff" }
             ]}
           />
-          <Select
-            allowClear
-            placeholder="Branch filter"
-            value={branchFilter || undefined}
-            onChange={(v) => {
-              setBranchFilter(v ?? "");
-              setPage(1);
-            }}
-            style={{ minWidth: 180 }}
-            options={branchOptions.map((b) => ({
-              value: b.id,
-              label: `${b.code} — ${b.name}`
-            }))}
-          />
           <Button type="primary" icon={<UserAddOutlined />} onClick={openCreate} disabled={!canCreateStaff}>
             Create User
           </Button>
@@ -395,7 +422,7 @@ export default function StaffManagerPanel() {
             endpoint="/gym/staff-users/export"
             params={{
               role: roleFilter,
-              branchId: branchFilter || undefined
+              branchId: defaultBranchId || undefined
             }}
             defaultFilename="staff-users.csv"
           />
@@ -533,11 +560,21 @@ export default function StaffManagerPanel() {
             <Input.Password autoComplete="new-password" />
           </Form.Item>
           <Form.Item
-            name="branchId"
-            label="Branch Assignment"
-            rules={[{ required: true, message: "Select a branch" }]}
+            name="branchIds"
+            label="Branch Assignments"
+            rules={[
+              { required: true, message: "Select at least one branch" },
+              {
+                validator: async (_, value) => {
+                  if (!Array.isArray(value) || value.length === 0) {
+                    throw new Error("Select at least one branch");
+                  }
+                }
+              }
+            ]}
           >
             <Select
+              mode="multiple"
               showSearch
               optionFilterProp="label"
               options={branchOptions.map((b) => ({

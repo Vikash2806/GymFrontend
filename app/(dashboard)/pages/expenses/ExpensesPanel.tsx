@@ -27,38 +27,44 @@ import type {
   ExpenseCategorySummaryResponse,
   ExpenseCategorySummaryRow,
   ExpenseCategory,
+  ExpenseEmployeeOption,
+  ExpenseEmployeesResponse,
   ExpenseMutationResponse,
   ExpenseRow,
   ExpensesListResponse
 } from "@/types/expense";
 import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
-import { gymMembershipRoleFromSession } from "@/utils/gymRole";
 import { formatInr } from "@/utils/formatCurrency";
 import ExportButton from "@/app/components/Export/ExportButton";
 
 const { Title, Text } = Typography;
+const { RangePicker } = DatePicker;
 
-const MONTHS: { value: number; label: string }[] = [
-  { value: 1, label: "January" },
-  { value: 2, label: "February" },
-  { value: 3, label: "March" },
-  { value: 4, label: "April" },
-  { value: 5, label: "May" },
-  { value: 6, label: "June" },
-  { value: 7, label: "July" },
-  { value: 8, label: "August" },
-  { value: 9, label: "September" },
-  { value: 10, label: "October" },
-  { value: 11, label: "November" },
-  { value: 12, label: "December" }
+type ExpenseType =
+  | "employee_salary"
+  | "equipment_repair"
+  | "sanitary_worker_salary"
+  | "gym_rent"
+  | "food_expense"
+  | "custom";
+type SalaryFilter = "all" | "salary_only" | "employee_salary" | "sanitary_worker_salary";
+
+const EXPENSE_TYPE_OPTIONS: Array<{ value: ExpenseType; label: string }> = [
+  { value: "employee_salary", label: "Employee Salary" },
+  { value: "equipment_repair", label: "Equipment Repair" },
+  { value: "sanitary_worker_salary", label: "Sanitary Worker Salary" },
+  { value: "gym_rent", label: "Gym Rent" },
+  { value: "food_expense", label: "Food Expense" },
+  { value: "custom", label: "Custom Category" }
 ];
 
 type ExpenseFormValues = {
-  branchId?: string | null;
+  expenseType: ExpenseType;
+  employeeUserId?: string;
   amount: number;
   date: Dayjs;
-  categoryId?: string | null;
+  categoryId?: string;
   notes?: string;
 };
 
@@ -70,13 +76,14 @@ type CategoryFormValues = {
 export default function ExpensesPanel() {
   const { message } = App.useApp();
   const session = useAppSelector(selectSession);
-  const role = gymMembershipRoleFromSession(session);
-  const isOwner = role === "owner";
   const defaultBranchId = session?.activeBranch?.id ?? session?.user?.defaults?.branchId ?? "";
 
   const [activeTab, setActiveTab] = useState("expenses");
-  const [year, setYear] = useState(() => new Date().getFullYear());
-  const [month, setMonth] = useState(() => new Date().getMonth() + 1);
+  const [dateRange, setDateRange] = useState<[Dayjs, Dayjs]>(() => [dayjs().startOf("month"), dayjs().endOf("month")]);
+  const [expenseTypeFilter, setExpenseTypeFilter] = useState<"all" | ExpenseType>("all");
+  const [salaryFilter, setSalaryFilter] = useState<SalaryFilter>("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>("");
+  const [employeeFilter, setEmployeeFilter] = useState<string>("");
 
   const [expensesLoading, setExpensesLoading] = useState(false);
   const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
@@ -86,6 +93,8 @@ export default function ExpensesPanel() {
 
   const [categoriesLoading, setCategoriesLoading] = useState(false);
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
+  const [employeesLoading, setEmployeesLoading] = useState(false);
+  const [staffUsers, setStaffUsers] = useState<ExpenseEmployeeOption[]>([]);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryRows, setSummaryRows] = useState<ExpenseCategorySummaryRow[]>([]);
   const [summaryTotal, setSummaryTotal] = useState(0);
@@ -100,19 +109,48 @@ export default function ExpensesPanel() {
   const [categorySubmitting, setCategorySubmitting] = useState(false);
   const [categoryForm] = Form.useForm<CategoryFormValues>();
 
-  const yearOptions = useMemo(() => {
-    const y = new Date().getFullYear();
-    return Array.from({ length: 11 }, (_, i) => y - 5 + i);
-  }, []);
-
-  const branchOptions = useMemo(() => {
-    const br = session?.gym?.branches ?? [];
-    return br.map((b) => ({ value: b.id, label: `${b.name} (${b.code})` }));
-  }, [session?.gym?.branches]);
+  const watchedExpenseType = Form.useWatch("expenseType", expenseForm);
+  const isSalaryExpense =
+    watchedExpenseType === "employee_salary" || watchedExpenseType === "sanitary_worker_salary";
+  const isCustomExpense = watchedExpenseType === "custom";
 
   const categoryOptions = useMemo(
     () => categories.map((c) => ({ value: c.id, label: c.name })),
     [categories]
+  );
+  const employeeOptions = useMemo(
+    () => staffUsers.map((e) => ({ value: e.id, label: `${e.fullName} (${e.role === "manager" ? "Manager" : "Staff"})` })),
+    [staffUsers]
+  );
+
+  const buildExpenseQueryParams = useCallback(
+    (forExport = false) => {
+      const params: Record<string, string | number> = {
+        startDate: dateRange[0].startOf("day").toISOString(),
+        endDate: dateRange[1].startOf("day").toISOString()
+      };
+      if (!forExport) {
+        params.page = expensesPage;
+        params.pageSize = expensesPageSize;
+      }
+      if (defaultBranchId) {
+        params.branchId = defaultBranchId;
+      }
+      if (expenseTypeFilter !== "all") {
+        params.expenseType = expenseTypeFilter;
+      }
+      if (salaryFilter !== "all") {
+        params.salaryFilter = salaryFilter;
+      }
+      if (categoryFilter) {
+        params.categoryId = categoryFilter;
+      }
+      if (employeeFilter) {
+        params.employeeUserId = employeeFilter;
+      }
+      return params;
+    },
+    [dateRange, expensesPage, expensesPageSize, defaultBranchId, expenseTypeFilter, salaryFilter, categoryFilter, employeeFilter]
   );
 
   const loadCategories = useCallback(async () => {
@@ -131,12 +169,30 @@ export default function ExpensesPanel() {
     }
   }, []);
 
+  const loadEmployees = useCallback(async () => {
+    setEmployeesLoading(true);
+    try {
+      const params: Record<string, string> = {};
+      if (defaultBranchId) {
+        params.branchId = defaultBranchId;
+      }
+      const { data } = await apiClient.get<ExpenseEmployeesResponse>("/gym/expenses/staff-users", { params });
+      if (data.success && Array.isArray(data.staffUsers)) {
+        setStaffUsers(data.staffUsers);
+      } else {
+        setStaffUsers([]);
+      }
+    } catch {
+      setStaffUsers([]);
+    } finally {
+      setEmployeesLoading(false);
+    }
+  }, [defaultBranchId]);
+
   const loadExpenses = useCallback(async () => {
     setExpensesLoading(true);
     try {
-      const { data } = await apiClient.get<ExpensesListResponse>("/gym/expenses", {
-        params: { year, month, page: expensesPage, pageSize: expensesPageSize }
-      });
+      const { data } = await apiClient.get<ExpensesListResponse>("/gym/expenses", { params: buildExpenseQueryParams() });
       if (data.success && Array.isArray(data.expenses)) {
         setExpenses(data.expenses);
         setExpensesTotal(typeof data.total === "number" ? data.total : data.expenses.length);
@@ -150,13 +206,13 @@ export default function ExpensesPanel() {
     } finally {
       setExpensesLoading(false);
     }
-  }, [year, month, expensesPage, expensesPageSize]);
+  }, [buildExpenseQueryParams]);
 
   const loadCategorySummary = useCallback(async () => {
     setSummaryLoading(true);
     try {
       const { data } = await apiClient.get<ExpenseCategorySummaryResponse>("/gym/expenses/category-summary", {
-        params: { year, month }
+        params: buildExpenseQueryParams(true)
       });
       if (data.success && Array.isArray(data.summary)) {
         setSummaryRows(data.summary);
@@ -169,45 +225,6 @@ export default function ExpensesPanel() {
         }
       }
     } catch (e: unknown) {
-      const status =
-        e && typeof e === "object" && "response" in e
-          ? (e as { response?: { status?: number } }).response?.status
-          : undefined;
-      if (status === 404) {
-        try {
-          const fallback = await apiClient.get<ExpensesListResponse>("/gym/expenses", {
-            params: { year, month }
-          });
-          if (fallback.data.success && Array.isArray(fallback.data.expenses)) {
-            const map = new Map<string, ExpenseCategorySummaryRow>();
-            for (const row of fallback.data.expenses) {
-              const key = row.categoryId ?? "uncategorized";
-              const name = row.categoryName ?? "Uncategorized";
-              const prev = map.get(key);
-              if (prev) {
-                prev.totalAmount += row.amount;
-                prev.expenseCount += 1;
-              } else {
-                map.set(key, {
-                  categoryId: row.categoryId ?? null,
-                  categoryName: name,
-                  totalAmount: row.amount,
-                  expenseCount: 1
-                });
-              }
-            }
-            const rows = [...map.values()].sort(
-              (a, b) => b.totalAmount - a.totalAmount || b.expenseCount - a.expenseCount
-            );
-            const total = rows.reduce((sum, row) => sum + row.totalAmount, 0);
-            setSummaryRows(rows);
-            setSummaryTotal(total);
-            return;
-          }
-        } catch {
-          // Fall through to generic error handling below.
-        }
-      }
       setSummaryRows([]);
       setSummaryTotal(0);
       const msg =
@@ -218,11 +235,15 @@ export default function ExpensesPanel() {
     } finally {
       setSummaryLoading(false);
     }
-  }, [year, month, message]);
+  }, [buildExpenseQueryParams, message]);
 
   useEffect(() => {
     void loadCategories();
   }, [loadCategories]);
+
+  useEffect(() => {
+    void loadEmployees();
+  }, [loadEmployees]);
 
   useEffect(() => {
     void loadExpenses();
@@ -248,9 +269,10 @@ export default function ExpensesPanel() {
     }
     if (editingExpense) {
       expenseForm.setFieldsValue({
+        expenseType: editingExpense.expenseType ?? "custom",
+        employeeUserId: editingExpense.employeeUserId ?? undefined,
         amount: editingExpense.amount,
         date: dayjs(editingExpense.date),
-        branchId: editingExpense.branchId,
         categoryId: editingExpense.categoryId ?? undefined,
         notes: editingExpense.notes || undefined
       });
@@ -260,26 +282,30 @@ export default function ExpensesPanel() {
     expenseForm.setFieldsValue({
       date: dayjs(),
       amount: undefined,
-      branchId: isOwner ? defaultBranchId || undefined : defaultBranchId,
+      expenseType: "employee_salary",
+      employeeUserId: undefined,
       categoryId: undefined,
       notes: undefined
     });
-  }, [expenseDrawerOpen, editingExpense, expenseForm, isOwner, defaultBranchId]);
+  }, [expenseDrawerOpen, editingExpense, expenseForm, defaultBranchId]);
 
   const submitExpense = async () => {
     try {
+      if (!defaultBranchId) {
+        message.error("No active branch selected.");
+        return;
+      }
       const v = await expenseForm.validateFields();
       setExpenseSubmitting(true);
       const payload: Record<string, unknown> = {
+        branchId: defaultBranchId,
+        expenseType: v.expenseType,
+        employeeUserId: v.employeeUserId ?? null,
         amount: v.amount,
         date: v.date.toISOString(),
         notes: v.notes?.trim() ?? "",
         categoryId: v.categoryId ?? null
       };
-      if (isOwner) {
-        payload.branchId = v.branchId ?? null;
-      }
-
       if (editingExpense) {
         const { data } = await apiClient.patch<ExpenseMutationResponse>(
           `/gym/expenses/${editingExpense.id}`,
@@ -406,21 +432,34 @@ export default function ExpensesPanel() {
 
   const expenseColumns: ColumnsType<ExpenseRow> = [
     {
-      title: "Amount",
-      dataIndex: "amount",
-      key: "amount",
-      render: (a: number) => formatInr(a)
-    },
-    {
       title: "Date",
       dataIndex: "date",
       key: "date",
       render: (d: string) => dayjs(d).format("DD-MM-YYYY")
     },
     {
+      title: "Amount",
+      dataIndex: "amount",
+      key: "amount",
+      render: (a: number) => formatInr(a)
+    },
+    {
+      title: "Expense Type",
+      key: "expenseType",
+      render: (_, row) =>
+        row.expenseTypeLabel ??
+        EXPENSE_TYPE_OPTIONS.find((opt) => opt.value === row.expenseType)?.label ??
+        row.expenseType
+    },
+    {
       title: "Branch",
       key: "branch",
-      render: (_, row) => row.branchName ?? "All branches"
+      render: (_, row) => row.branchName ?? "—"
+    },
+    {
+      title: "Employee",
+      key: "employee",
+      render: (_, row) => row.employeeName ?? "—"
     },
     {
       title: "Category",
@@ -528,23 +567,65 @@ export default function ExpensesPanel() {
                   }}
                 >
                   <Space wrap>
-                    <Select
-                      style={{ width: 120 }}
-                      value={year}
-                      onChange={(value) => {
+                    <RangePicker
+                      value={dateRange}
+                      format="DD-MM-YYYY"
+                      onChange={(v) => {
+                        if (!v?.[0] || !v?.[1]) {
+                          return;
+                        }
                         setExpensesPage(1);
-                        setYear(value);
+                        setDateRange([v[0], v[1]]);
                       }}
-                      options={yearOptions.map((y) => ({ value: y, label: String(y) }))}
                     />
                     <Select
-                      style={{ width: 140 }}
-                      value={month}
+                      style={{ minWidth: 220 }}
+                      value={expenseTypeFilter}
                       onChange={(value) => {
                         setExpensesPage(1);
-                        setMonth(value);
+                        setExpenseTypeFilter(value);
                       }}
-                      options={MONTHS.map((m) => ({ value: m.value, label: m.label }))}
+                      options={[
+                        { value: "all", label: "All expense types" },
+                        ...EXPENSE_TYPE_OPTIONS
+                      ]}
+                    />
+                    <Select
+                      style={{ minWidth: 220 }}
+                      value={salaryFilter}
+                      onChange={(value) => {
+                        setExpensesPage(1);
+                        setSalaryFilter(value);
+                      }}
+                      options={[
+                        { value: "all", label: "All (salary + non-salary)" },
+                        { value: "salary_only", label: "Salary only" },
+                        { value: "employee_salary", label: "Employee salary only" },
+                        { value: "sanitary_worker_salary", label: "Sanitary worker salary only" }
+                      ]}
+                    />
+                    <Select
+                      allowClear
+                      style={{ minWidth: 220 }}
+                      placeholder="Filter by employee"
+                      value={employeeFilter || undefined}
+                      onChange={(value) => {
+                        setExpensesPage(1);
+                        setEmployeeFilter(value ?? "");
+                      }}
+                      options={employeeOptions}
+                      loading={employeesLoading}
+                    />
+                    <Select
+                      allowClear
+                      style={{ minWidth: 220 }}
+                      placeholder="Filter by custom category"
+                      value={categoryFilter || undefined}
+                      onChange={(value) => {
+                        setExpensesPage(1);
+                        setCategoryFilter(value ?? "");
+                      }}
+                      options={categoryOptions}
                     />
                     <Button
                       icon={<ReloadOutlined />}
@@ -559,10 +640,7 @@ export default function ExpensesPanel() {
                   <Space wrap>
                     <ExportButton
                       endpoint="/gym/exports/expenses"
-                      params={{
-                        year,
-                        month
-                      }}
+                      params={buildExpenseQueryParams(true)}
                       defaultFilename="expenses.csv"
                     />
                     <Button type="primary" icon={<PlusOutlined />} onClick={openAddExpense}>
@@ -611,7 +689,7 @@ export default function ExpensesPanel() {
                       gap: 12
                     }}
                   >
-                    <Text strong>Category-wise aggregation</Text>
+                    <Text strong>Expense-head aggregation</Text>
                     <Text strong>Total: {formatInr(summaryTotal)}</Text>
                   </div>
                   <Table<ExpenseCategorySummaryRow>
@@ -687,24 +765,49 @@ export default function ExpensesPanel() {
           <Space>
             <Button onClick={() => setExpenseDrawerOpen(false)}>Cancel</Button>
             <Button type="primary" loading={expenseSubmitting} onClick={() => void submitExpense()}>
-              {editingExpense ? "Save" : "Add"}
+              Save
             </Button>
           </Space>
         }
       >
         <Form form={expenseForm} layout="vertical" requiredMark>
-          {isOwner ? (
-            <Form.Item name="branchId" label="Branch (optional)">
+          <Form.Item
+            name="expenseType"
+            label="Expense Type"
+            rules={[{ required: true, message: "Select expense type" }]}
+          >
+            <Select
+              options={EXPENSE_TYPE_OPTIONS}
+              onChange={() => {
+                expenseForm.setFieldsValue({ employeeUserId: undefined });
+                if (expenseForm.getFieldValue("expenseType") !== "custom") {
+                  expenseForm.setFieldsValue({ categoryId: undefined });
+                }
+              }}
+            />
+          </Form.Item>
+          {isSalaryExpense ? (
+            <Form.Item
+              name="employeeUserId"
+              label={
+                watchedExpenseType === "sanitary_worker_salary"
+                  ? "Select sanitary staff/manager to pay salary"
+                  : "Select staff/manager to pay salary"
+              }
+              rules={[{ required: true, message: "Select staff/manager" }]}
+            >
               <Select
-                allowClear
-                placeholder="All branches (no branch)"
-                options={branchOptions}
+                showSearch
+                optionFilterProp="label"
+                options={employeeOptions}
+                loading={employeesLoading}
+                placeholder="Select staff/manager"
               />
             </Form.Item>
           ) : null}
           <Form.Item
             name="amount"
-            label="Amount"
+            label={isSalaryExpense ? "Salary Amount" : "Amount"}
             rules={[{ required: true, message: "Enter amount" }]}
           >
             <InputNumber
@@ -721,14 +824,21 @@ export default function ExpensesPanel() {
           >
             <DatePicker style={{ width: "100%" }} format="DD-MM-YYYY" />
           </Form.Item>
-          <Form.Item name="categoryId" label="Category">
-            <Select
-              allowClear
-              placeholder={categories.length ? "Select category" : "No categories available"}
-              options={categoryOptions}
-              loading={categoriesLoading}
-            />
-          </Form.Item>
+          {isCustomExpense ? (
+            <Form.Item
+              name="categoryId"
+              label="Custom Category"
+              rules={[{ required: true, message: "Select category" }]}
+            >
+              <Select
+                showSearch
+                optionFilterProp="label"
+                placeholder={categories.length ? "Select category" : "No categories available"}
+                options={categoryOptions}
+                loading={categoriesLoading}
+              />
+            </Form.Item>
+          ) : null}
           <Form.Item name="notes" label="Notes (optional)">
             <Input.TextArea rows={3} placeholder="Short note" />
           </Form.Item>

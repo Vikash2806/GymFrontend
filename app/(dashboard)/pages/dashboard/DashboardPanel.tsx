@@ -39,7 +39,6 @@ import type {
 import type { Member } from "@/types/member";
 import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
-import { gymMembershipRoleFromSession } from "@/utils/gymRole";
 
 const RevenueTrendChart = dynamic(() => import("../finance/RevenueTrendChart"), {
   ssr: false,
@@ -111,8 +110,6 @@ export default function DashboardPanel() {
   const { message } = App.useApp();
   const { token } = theme.useToken();
   const session = useAppSelector(selectSession);
-  const role = gymMembershipRoleFromSession(session);
-  const isOwner = role === "owner";
 
   const yearOptions = useMemo(() => {
     const y = new Date().getFullYear();
@@ -121,7 +118,6 @@ export default function DashboardPanel() {
 
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [month, setMonth] = useState(() => new Date().getMonth() + 1);
-  const [branchId, setBranchId] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [overview, setOverview] = useState<FinanceOverviewPayload | null>(null);
   const [trendMetric, setTrendMetric] = useState<"revenue" | "members">("revenue");
@@ -135,47 +131,21 @@ export default function DashboardPanel() {
   >([]);
   const [memberCount, setMemberCount] = useState<number | null>(null);
   const [loadingMembers, setLoadingMembers] = useState(false);
-  const activeBranchId = session?.activeBranch?.id ?? session?.user?.defaults?.branchId ?? "";
-  const lastSyncedActiveBranchId = useRef<string>("");
+  const selectedBranchId = session?.activeBranch?.id ?? session?.user?.defaults?.branchId ?? "";
   const overviewReqSeq = useRef(0);
   const revenueTrendReqSeq = useRef(0);
 
-  useEffect(() => {
-    if (!isOwner) {
-      setBranchId(undefined);
-      lastSyncedActiveBranchId.current = "";
-      return;
-    }
-    if (!lastSyncedActiveBranchId.current) {
-      setBranchId(activeBranchId || undefined);
-      lastSyncedActiveBranchId.current = activeBranchId;
-      return;
-    }
-    if (activeBranchId !== lastSyncedActiveBranchId.current) {
-      setBranchId(activeBranchId || undefined);
-      lastSyncedActiveBranchId.current = activeBranchId;
-    }
-  }, [isOwner, activeBranchId]);
-
-  const branchOptions = useMemo(() => {
-    const br = session?.gym?.branches ?? [];
-    return br.map((b) => ({ value: b.id, label: `${b.name} (${b.code})` }));
-  }, [session?.gym?.branches]);
-
   const resolvedBranchForMembers = useMemo(() => {
-    if (isOwner) {
-      return branchId ?? session?.activeBranch?.id ?? session?.user?.defaults?.branchId ?? "";
-    }
     return session?.activeBranch?.id ?? session?.user?.defaults?.branchId ?? "";
-  }, [isOwner, branchId, session?.activeBranch?.id, session?.user?.defaults?.branchId]);
+  }, [session?.activeBranch?.id, session?.user?.defaults?.branchId]);
 
   const loadOverview = useCallback(async () => {
     const reqId = ++overviewReqSeq.current;
     setLoading(true);
     try {
       const params: Record<string, string | number> = { year, month };
-      if (isOwner && branchId) {
-        params.branchId = branchId;
+      if (selectedBranchId) {
+        params.branchId = selectedBranchId;
       }
       const { data } = await apiClient.get<FinanceOverviewResponse>("/gym/finance/overview", { params });
       if (reqId !== overviewReqSeq.current) {
@@ -197,7 +167,7 @@ export default function DashboardPanel() {
         setLoading(false);
       }
     }
-  }, [year, month, branchId, isOwner, message]);
+  }, [year, month, selectedBranchId, message]);
 
   useEffect(() => {
     void loadOverview();
@@ -210,8 +180,8 @@ export default function DashboardPanel() {
       const requests = Array.from({ length: 12 }, (_, i) => {
         const monthValue = i + 1;
         const params: Record<string, string | number> = { year, month: monthValue };
-        if (isOwner && branchId) {
-          params.branchId = branchId;
+        if (selectedBranchId) {
+          params.branchId = selectedBranchId;
         }
         return apiClient.get<FinanceOverviewResponse>("/gym/finance/overview", { params });
       });
@@ -238,7 +208,7 @@ export default function DashboardPanel() {
         setLoadingRevenueTrend(false);
       }
     }
-  }, [year, isOwner, branchId, message]);
+  }, [year, selectedBranchId, message]);
 
   useEffect(() => {
     if (trendMetric === "revenue") {
@@ -382,16 +352,6 @@ export default function DashboardPanel() {
           <Text type="secondary">Welcome back — {gymName}</Text>
         </div>
         <Space wrap>
-          {isOwner ? (
-            <Select
-              allowClear
-              placeholder="All branches"
-              style={{ minWidth: 200 }}
-              options={branchOptions}
-              value={branchId}
-              onChange={(v) => setBranchId(v)}
-            />
-          ) : null}
           <Select
             style={{ width: 120 }}
             value={year}
@@ -468,9 +428,7 @@ export default function DashboardPanel() {
                   valueStyle={{ fontSize: 20, fontWeight: 600 }}
                 />
                 <Text type="secondary" style={{ fontSize: 11 }}>
-                  {isOwner && !branchId
-                    ? `Scoped to ${session?.activeBranch?.name ?? "active branch"}`
-                    : "Listed members for selected branch"}
+                  {`Scoped to ${session?.activeBranch?.name ?? "active branch"}`}
                 </Text>
               </div>
             </Space>

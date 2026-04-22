@@ -19,7 +19,6 @@ import {
   Flex
 } from "antd";
 import {
-  SearchOutlined,
   DownOutlined,
   SettingOutlined,
   UserOutlined,
@@ -91,21 +90,16 @@ interface CustomAppBarProps {
   onHeightChange: (height: number) => void;
 }
 
-type SearchCategory = {
-  key: string;
-  label: string;
-  route: string;
-  feature?: string;
-};
-
-const searchCategories: SearchCategory[] = [
-  { key: "Dashboard", label: "Dashboard", route: "/pages/dashboard", feature: FEATURES.DASHBOARD },
-  { key: "Members", label: "Members", route: "/pages/members", feature: FEATURES.MEMBER_MANAGEMENT },
-  { key: "Billing", label: "Billing", route: "/pages/billing", feature: FEATURES.BILLING_DASHBOARD },
-  { key: "Branches", label: "Branches", route: "/pages/branches", feature: FEATURES.BRANCH_MANAGEMENT },
-  { key: "StaffManager", label: "Staff / Manager", route: "/pages/staff-manager", feature: FEATURES.STAFF_MANAGEMENT },
-  { key: "Settings", label: "Settings", route: "/pages/settings", feature: FEATURES.SETTINGS }
-];
+const dashboardPrefetchRoutes = [
+  "/pages/dashboard",
+  "/pages/members",
+  "/pages/billing",
+  "/pages/branches",
+  "/pages/staff-manager",
+  "/pages/finance",
+  "/pages/expenses",
+  "/pages/settings"
+] as const;
 
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -129,9 +123,6 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
   const dispatch = useAppDispatch();
   const router = useRouter();
   const pathname = usePathname();
-
-  const [selectedCategory, setSelectedCategory] = useState(searchCategories[0]?.key ?? "Dashboard");
-  const [searchValue, setSearchValue] = useState("");
   const [gymModalOpen, setGymModalOpen] = useState(false);
   const [gymForm] = Form.useForm<{ name: string }>();
   const [logoFile, setLogoFile] = useState<string | null>(null);
@@ -140,18 +131,46 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
   const gym = session?.gym;
   const activeBranch = session?.activeBranch;
   const branches = gym?.branches ?? [];
-  const canManageBranches = hasFeature(session, FEATURES.BRANCH_MANAGEMENT);
+  const gymId = session?.user?.defaults?.gymId ?? gym?.id ?? "";
+  const membership = session?.user?.associatedGyms?.find((g) => g.gymId === gymId);
   const canEditGymProfile = hasFeature(session, FEATURES.GYM_PROFILE);
   const canOpenSettings = hasFeature(session, FEATURES.SETTINGS);
-  const allowedSearchCategories = useMemo(
-    () => searchCategories.filter((item) => !item.feature || hasFeature(session, item.feature)),
-    [session]
+  const userRole = String(session?.rbac?.role ?? membership?.gymRole ?? "").toLowerCase();
+  const isOwner = userRole === "owner";
+  const assignedBranchIds = useMemo(() => {
+    if (isOwner) {
+      return branches.map((branch) => branch.id);
+    }
+    const fromMembership = (membership?.branches ?? []).map((entry) => entry.branchId);
+    if (fromMembership.length > 0) {
+      return [...new Set(fromMembership)];
+    }
+    const fallback = session?.user?.defaults?.branchId ?? activeBranch?.id ?? "";
+    return fallback ? [fallback] : [];
+  }, [isOwner, branches, membership?.branches, session?.user?.defaults?.branchId, activeBranch?.id]);
+  const visibleBranches = useMemo(
+    () => branches.filter((branch) => assignedBranchIds.includes(branch.id)),
+    [branches, assignedBranchIds]
   );
-  const assignedBranchId = session?.user?.defaults?.branchId ?? activeBranch?.id ?? "";
-  const visibleBranches = canManageBranches
-    ? branches
-    : branches.filter((branch) => branch.id === assignedBranchId);
-  const selectedBranchId = canManageBranches ? activeBranch?.id : assignedBranchId || activeBranch?.id;
+  const selectedBranchId = useMemo(() => {
+    const activeId = activeBranch?.id ?? "";
+    if (activeId && visibleBranches.some((branch) => branch.id === activeId)) {
+      return activeId;
+    }
+    return visibleBranches[0]?.id;
+  }, [activeBranch?.id, visibleBranches]);
+  const workspaceLabel = useMemo(() => {
+    if (userRole === "owner") {
+      return "Gym owner workspace";
+    }
+    if (userRole === "manager") {
+      return "Gym manager workspace";
+    }
+    if (userRole === "staff") {
+      return "Gym staff workspace";
+    }
+    return gym ? "Gym workspace" : "Gym management workspace";
+  }, [userRole, gym]);
 
   useEffect(() => {
     if (headerRef.current) {
@@ -160,28 +179,10 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
   }, [onHeightChange]);
 
   useEffect(() => {
-    if (!allowedSearchCategories.some((item) => item.key === selectedCategory)) {
-      setSelectedCategory(allowedSearchCategories[0]?.key ?? "Dashboard");
-    }
-  }, [allowedSearchCategories, selectedCategory]);
-
-  useEffect(() => {
-    const routesToPrefetch = [
-      "/pages/dashboard",
-      "/pages/customers",
-      "/pages/employees",
-      "/pages/vendors",
-      "/pages/settings"
-    ];
-    for (const route of routesToPrefetch) {
+    for (const route of dashboardPrefetchRoutes) {
       router.prefetch(route);
     }
   }, [router]);
-
-  const handleSearch = () => {
-    const selected = allowedSearchCategories.find((item) => item.key === selectedCategory);
-    router.push(selected?.route ?? "/pages/dashboard");
-  };
 
   const onProfileMenuClick: MenuProps["onClick"] = async ({ key }) => {
     if (key === "settings") {
@@ -214,9 +215,6 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
       .toUpperCase() ?? "U";
 
   const onBranchChange = async (branchId: string) => {
-    if (!canManageBranches) {
-      return;
-    }
     try {
       const res = await apiClient.patch<{ token: string }>("/auth/branch", { branchId });
       dispatch(patchSessionToken({ token: res.data.token }));
@@ -330,7 +328,7 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
                   value={selectedBranchId}
                   options={visibleBranches.map((b) => ({ value: b.id, label: b.name }))}
                   onChange={onBranchChange}
-                  disabled={!canManageBranches || visibleBranches.length <= 1}
+                  disabled={visibleBranches.length <= 1}
                   optionRender={(opt) => {
                     const b = visibleBranches.find((x) => x.id === opt.value);
                     if (!b) {
@@ -419,52 +417,12 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
               padding: 0
             }}
           >
-            {gym ? "Gym owner workspace" : "Gym management workspace"}
+            {workspaceLabel}
           </Text>
         </Flex>
       </Flex>
 
       <Flex align="center" gap={12} style={{ flexShrink: 0 }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            backgroundColor: token.colorBgContainer,
-            borderRadius: 6,
-            border: `1px solid ${token.colorBorder}`,
-            overflow: "hidden"
-          }}
-        >
-          <Select
-            variant="borderless"
-            value={selectedCategory}
-            options={allowedSearchCategories.map((item) => ({ value: item.key, label: item.label }))}
-            onChange={(value) => {
-              setSelectedCategory(value);
-              const selected = allowedSearchCategories.find((item) => item.key === value);
-              if (selected && pathname !== selected.route) {
-                router.push(selected.route);
-              }
-            }}
-            style={{ minWidth: 170, height: 36 }}
-            suffixIcon={<DownOutlined style={{ fontSize: 11, color: token.colorTextSecondary }} />}
-            disabled={allowedSearchCategories.length <= 1}
-          />
-          <Input
-            placeholder="Search..."
-            style={{ width: 200, height: 36, border: "none" }}
-            value={searchValue}
-            onChange={(e) => setSearchValue(e.target.value)}
-            onPressEnter={handleSearch}
-          />
-          <Button
-            type="primary"
-            icon={<SearchOutlined />}
-            style={{ height: 36, width: 36, borderRadius: 0, border: "none" }}
-            onClick={handleSearch}
-          />
-        </div>
-
         <Space size={8}>
           <Button
             type="text"

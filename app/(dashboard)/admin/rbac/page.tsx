@@ -193,18 +193,27 @@ export default function RbacAdminPage() {
           ]}
         />
 
-        <Space size={8}>
-          <Typography.Text type="secondary">Bulk:</Typography.Text>
-          <Button size="small" onClick={() => setAll(true)} disabled={loading || saving}>
-            Select all
-          </Button>
-          <Button size="small" onClick={() => setAll(false)} disabled={loading || saving}>
-            Deselect all
-          </Button>
-          <Typography.Text type="secondary">
-            {enabledCount} / {editableFeatures.length} screens enabled
-          </Typography.Text>
-        </Space>
+        <Row justify="space-between" align="middle" wrap gutter={[12, 12]}>
+          <Col>
+            <Space size={8} wrap>
+              <Typography.Text type="secondary">Bulk:</Typography.Text>
+              <Button size="small" onClick={() => setAll(true)} disabled={loading || saving}>
+                Select all
+              </Button>
+              <Button size="small" onClick={() => setAll(false)} disabled={loading || saving}>
+                Deselect all
+              </Button>
+              <Typography.Text type="secondary">
+                {enabledCount} / {editableFeatures.length} screens enabled
+              </Typography.Text>
+            </Space>
+          </Col>
+          <Col>
+            <Button type="primary" loading={saving} onClick={() => void save()}>
+              Save Access
+            </Button>
+          </Col>
+        </Row>
 
         <Row gutter={[16, 16]}>
           {standardSections.map((entry) => (
@@ -260,9 +269,6 @@ export default function RbacAdminPage() {
           </Col>
         </Row>
 
-        <Button type="primary" loading={saving} onClick={() => void save()}>
-          Save Access
-        </Button>
       </Space>
     </RbacPermissionGuard>
   );

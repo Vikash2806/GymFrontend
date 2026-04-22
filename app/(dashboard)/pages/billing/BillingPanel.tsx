@@ -58,7 +58,6 @@ type PaymentFormValues = {
   amount: number;
   method: "cash" | "upi" | "card";
   transactionRef?: string;
-  paidAt: Dayjs;
 };
 
 export default function BillingPanel() {
@@ -95,11 +94,6 @@ export default function BillingPanel() {
     }
     return map;
   }, [session?.gym?.branches]);
-
-  const branchOptions = useMemo(() => {
-    const br = session?.gym?.branches ?? [];
-    return br.map((b) => ({ value: b.id, label: `${b.name} (${b.code})` }));
-  }, [session?.gym]);
 
   const loadMembers = useCallback(async () => {
     if (!branchFilter) {
@@ -172,8 +166,7 @@ export default function BillingPanel() {
     form.setFieldsValue({
       amount: sub.payment.pendingAmount,
       method: "cash",
-      transactionRef: undefined,
-      paidAt: dayjs()
+      transactionRef: undefined
     });
   }, [payModalOpen, payingMember, form]);
 
@@ -203,7 +196,7 @@ export default function BillingPanel() {
           method: values.method,
           status: "success",
           transactionRef: values.transactionRef?.trim() || null,
-          paidAt: values.paidAt.toISOString()
+          paidAt: dayjs().toISOString()
         }
       );
       if (!data.success) {
@@ -327,18 +320,6 @@ export default function BillingPanel() {
             }}
             enterButton
           />
-          <Select
-            showSearch
-            optionFilterProp="label"
-            style={{ minWidth: 220 }}
-            placeholder="Branch"
-            value={branchFilter || undefined}
-            onChange={(v) => {
-              setPage(1);
-              setBranchFilter(v);
-            }}
-            options={branchOptions}
-          />
           <Button icon={<ReloadOutlined />} onClick={() => void loadMembers()}>
             Refresh
           </Button>
@@ -436,8 +417,15 @@ export default function BillingPanel() {
           <Form.Item name="transactionRef" label="Transaction reference (optional)">
             <Input maxLength={256} placeholder="UPI ref / receipt no." />
           </Form.Item>
-          <Form.Item name="paidAt" label="Paid at" rules={[{ required: true }]}>
-            <DatePicker showTime style={{ width: "100%" }} format="DD-MM-YYYY HH:mm" />
+          <Form.Item label="Paid at">
+            <DatePicker
+              showTime
+              disabled
+              value={dayjs()}
+              inputReadOnly
+              style={{ width: "100%" }}
+              format="DD-MM-YYYY HH:mm"
+            />
           </Form.Item>
         </Form>
       </Modal>

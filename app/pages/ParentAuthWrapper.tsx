@@ -4,11 +4,12 @@ import { useEffect, useState } from "react";
 import { useSelector } from "react-redux";
 import { useDispatch } from "react-redux";
 import { useRouter } from "next/navigation";
-import { logout, selectIsLoggedIn, setSession } from "@/redux/features/auth/authSlice";
+import { logout, selectIsLoggedIn, selectSession, setSession } from "@/redux/features/auth/authSlice";
 import { Layout, Spin, Typography, theme } from "antd";
 import type { AppDispatch } from "@/redux/store";
 import apiClient from "@/utils/api";
 import type { SessionPayload } from "@/redux/features/auth/sessionTypes";
+import { getFirstAccessibleRoute } from "@/utils/permissions";
 
 const { Text } = Typography;
 
@@ -47,6 +48,7 @@ export default function ParentAuthWrapper({ children }: Props) {
   const router = useRouter();
   const dispatch = useDispatch<AppDispatch>();
   const isLoggedIn = useSelector(selectIsLoggedIn);
+  const session = useSelector(selectSession);
   const [mounted, setMounted] = useState(false);
   const [verifyingSession, setVerifyingSession] = useState(false);
 
@@ -62,6 +64,19 @@ export default function ParentAuthWrapper({ children }: Props) {
       router.replace("/login");
     }
   }, [isLoggedIn, router, mounted]);
+
+  useEffect(() => {
+    if (!mounted || !isLoggedIn) {
+      return;
+    }
+    const path = typeof window !== "undefined" ? window.location.pathname : "";
+    if (path === "/pages/dashboard") {
+      const firstAccessibleRoute = getFirstAccessibleRoute(session);
+      if (firstAccessibleRoute !== "/pages/dashboard") {
+        router.replace(firstAccessibleRoute);
+      }
+    }
+  }, [mounted, isLoggedIn, session, router]);
 
   useEffect(() => {
     if (!mounted || !isLoggedIn) {

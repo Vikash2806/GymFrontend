@@ -11,6 +11,16 @@ export type ExpenseRow = {
   gymId: string;
   branchId: string | null;
   branchName: string | null;
+  expenseType:
+    | "employee_salary"
+    | "equipment_repair"
+    | "sanitary_worker_salary"
+    | "gym_rent"
+    | "food_expense"
+    | "custom";
+  expenseTypeLabel?: string;
+  employeeUserId?: string | null;
+  employeeName?: string | null;
   categoryId: string | null;
   categoryName: string | null;
   amount: number;
@@ -54,6 +64,22 @@ export type ExpenseCategorySummaryResponse = {
   message?: string;
   year?: number;
   month?: number;
+  startDate?: string;
+  endDateExclusive?: string;
   summary?: ExpenseCategorySummaryRow[];
   totalAmount?: number;
+};
+
+export type ExpenseEmployeeOption = {
+  id: string;
+  fullName: string;
+  phone: string;
+  role: "manager" | "staff";
+  branchIds: string[];
+};
+
+export type ExpenseEmployeesResponse = {
+  success: boolean;
+  message?: string;
+  staffUsers?: ExpenseEmployeeOption[];
 };

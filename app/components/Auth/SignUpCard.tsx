@@ -25,9 +25,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { selectIsLoggedIn, selectLoadingState, signupAsync } from "@/redux/features/auth/authSlice";
+import {
+  selectIsLoggedIn,
+  selectLoadingState,
+  selectSession,
+  signupAsync
+} from "@/redux/features/auth/authSlice";
 import type { AppDispatch } from "@/redux/store";
 import { normalizeIndianMobileNumber, stripToIndianMobileDigits } from "@/utils/mobileValidation";
+import { getFirstAccessibleRoute } from "@/utils/permissions";
 import styles from "./auth.module.css";
 
 const { Title, Text } = Typography;
@@ -59,6 +65,7 @@ export default function SignUpCard() {
   const router = useRouter();
   const isLoading = useSelector(selectLoadingState);
   const isLoggedIn = useSelector(selectIsLoggedIn);
+  const session = useSelector(selectSession);
   const [accountForm] = Form.useForm<AccountStepValues>();
   const [gymForm] = Form.useForm<GymStepValues>();
   const [step, setStep] = useState(0);
@@ -68,9 +75,9 @@ export default function SignUpCard() {
 
   useEffect(() => {
     if (isLoggedIn) {
-      router.replace("/pages/dashboard");
+      router.replace(getFirstAccessibleRoute(session));
     }
-  }, [isLoggedIn, router]);
+  }, [isLoggedIn, router, session]);
 
   const onAccountFinish = (values: AccountStepValues) => {
     setAccountSnapshot(values);

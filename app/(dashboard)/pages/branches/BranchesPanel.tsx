@@ -35,7 +35,6 @@ import {
 import apiClient from "@/utils/api";
 import { WIDE_MODAL_WIDTH } from "@/utils/modalWidths";
 import type { BranchRow, BranchesListResponse, BranchMutationResponse } from "@/types/branch";
-import { INDIAN_STATES } from "@/utils/indianStates";
 import { isValidIndianMobile, stripToIndianMobileDigits, toE164IndianMobile } from "@/utils/mobileValidation";
 import { TAMIL_NADU_CITIES_AND_DISTRICTS } from "@/utils/tamilNaduLocations";
 import { useAppDispatch } from "@/redux/hooks";
@@ -132,7 +131,7 @@ export default function BranchesPanel() {
         line1: editing.address.line1,
         line2: editing.address.line2 || undefined,
         country: editing.address.country || "India",
-        state: editing.address.state,
+        state: DEFAULT_STATE,
         city: editing.address.city,
         pincode: editing.address.pincode,
         phone: stripToIndianMobileDigits(editing.contact.phone),
@@ -174,7 +173,7 @@ export default function BranchesPanel() {
           line1: values.line1.trim(),
           line2: (values.line2 ?? "").trim(),
           country: values.country.trim(),
-          state: values.state.trim(),
+          state: DEFAULT_STATE,
           city: values.city.trim(),
           pincode: (values.pincode ?? "").trim()
         },
@@ -460,12 +459,7 @@ export default function BranchesPanel() {
             </Col>
             <Col xs={24} sm={12}>
               <Form.Item name="state" label="State" rules={[{ required: true, message: "Required" }]}>
-                <Select
-                  showSearch
-                  placeholder="Select state"
-                  optionFilterProp="label"
-                  options={INDIAN_STATES.map((s) => ({ value: s, label: s }))}
-                />
+                <Input readOnly value={DEFAULT_STATE} />
               </Form.Item>
             </Col>
             <Col xs={24} sm={12}>

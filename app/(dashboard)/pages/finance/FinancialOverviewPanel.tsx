@@ -27,7 +27,6 @@ import { formatInr } from "@/utils/formatCurrency";
 import type { FinanceOverviewPayload, FinanceOverviewResponse } from "@/types/finance";
 import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
-import { gymMembershipRoleFromSession } from "@/utils/gymRole";
 import ExportButton from "@/app/components/Export/ExportButton";
 
 const RevenueTrendChart = dynamic(() => import("./RevenueTrendChart"), {
@@ -61,8 +60,6 @@ export default function FinancialOverviewPanel() {
   const { message } = App.useApp();
   const { token } = theme.useToken();
   const session = useAppSelector(selectSession);
-  const role = gymMembershipRoleFromSession(session);
-  const isOwner = role === "owner";
 
   const yearOptions = useMemo(() => {
     const y = new Date().getFullYear();
@@ -71,47 +68,23 @@ export default function FinancialOverviewPanel() {
 
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [month, setMonth] = useState(() => new Date().getMonth() + 1);
-  const [branchId, setBranchId] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [overview, setOverview] = useState<FinanceOverviewPayload | null>(null);
   const [loadingRevenueTrend, setLoadingRevenueTrend] = useState(false);
   const [revenueTrendData, setRevenueTrendData] = useState<
     { month: number; label: string; amount: number; year: number }[]
   >([]);
-  const activeBranchId = session?.activeBranch?.id ?? session?.user?.defaults?.branchId ?? "";
-  const lastSyncedActiveBranchId = useRef<string>("");
+  const selectedBranchId = session?.activeBranch?.id ?? session?.user?.defaults?.branchId ?? "";
   const overviewReqSeq = useRef(0);
   const revenueTrendReqSeq = useRef(0);
-
-  const branchOptions = useMemo(() => {
-    const br = session?.gym?.branches ?? [];
-    return br.map((b) => ({ value: b.id, label: `${b.name} (${b.code})` }));
-  }, [session?.gym?.branches]);
-
-  useEffect(() => {
-    if (!isOwner) {
-      setBranchId(undefined);
-      lastSyncedActiveBranchId.current = "";
-      return;
-    }
-    if (!lastSyncedActiveBranchId.current) {
-      setBranchId(activeBranchId || undefined);
-      lastSyncedActiveBranchId.current = activeBranchId;
-      return;
-    }
-    if (activeBranchId !== lastSyncedActiveBranchId.current) {
-      setBranchId(activeBranchId || undefined);
-      lastSyncedActiveBranchId.current = activeBranchId;
-    }
-  }, [isOwner, activeBranchId]);
 
   const load = useCallback(async () => {
     const reqId = ++overviewReqSeq.current;
     setLoading(true);
     try {
       const params: Record<string, string | number> = { year, month };
-      if (isOwner && branchId) {
-        params.branchId = branchId;
+      if (selectedBranchId) {
+        params.branchId = selectedBranchId;
       }
       const { data } = await apiClient.get<FinanceOverviewResponse>("/gym/finance/overview", { params });
       if (reqId !== overviewReqSeq.current) {
@@ -133,7 +106,7 @@ export default function FinancialOverviewPanel() {
         setLoading(false);
       }
     }
-  }, [year, month, branchId, isOwner, message]);
+  }, [year, month, selectedBranchId, message]);
 
   useEffect(() => {
     void load();
@@ -146,8 +119,8 @@ export default function FinancialOverviewPanel() {
       const requests = Array.from({ length: 12 }, (_, i) => {
         const monthValue = i + 1;
         const params: Record<string, string | number> = { year, month: monthValue };
-        if (isOwner && branchId) {
-          params.branchId = branchId;
+        if (selectedBranchId) {
+          params.branchId = selectedBranchId;
         }
         return apiClient.get<FinanceOverviewResponse>("/gym/finance/overview", { params });
       });
@@ -174,7 +147,7 @@ export default function FinancialOverviewPanel() {
         setLoadingRevenueTrend(false);
       }
     }
-  }, [year, isOwner, branchId, message]);
+  }, [year, selectedBranchId, message]);
 
   useEffect(() => {
     void loadRevenueTrend();
@@ -222,16 +195,6 @@ export default function FinancialOverviewPanel() {
           Financial Overview
         </Title>
         <Space wrap>
-          {isOwner ? (
-            <Select
-              allowClear
-              placeholder="All branches"
-              style={{ minWidth: 200 }}
-              options={branchOptions}
-              value={branchId}
-              onChange={(v) => setBranchId(v)}
-            />
-          ) : null}
           <Select
             style={{ width: 120 }}
             value={year}
@@ -379,7 +342,7 @@ export default function FinancialOverviewPanel() {
                 params={{
                   year,
                   month,
-                  branchId: isOwner ? branchId : undefined
+                  branchId: selectedBranchId || undefined
                 }}
                 defaultFilename="finance-payments.csv"
               />
@@ -434,7 +397,7 @@ export default function FinancialOverviewPanel() {
                 params={{
                   year,
                   month,
-                  branchId: isOwner ? branchId : undefined
+                  branchId: selectedBranchId || undefined
                 }}
                 defaultFilename="finance-pending.csv"
               />

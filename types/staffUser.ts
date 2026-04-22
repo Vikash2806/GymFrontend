@@ -5,6 +5,7 @@ export type StaffUserRow = {
   email?: string | null;
   role: "manager" | "staff" | null;
   branch: { id: string; code: string; name: string };
+  branches?: Array<{ id: string; code: string; name: string }>;
   status: "active" | "inactive";
   createdAt: string;
 };

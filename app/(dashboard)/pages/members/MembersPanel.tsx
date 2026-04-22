@@ -53,6 +53,7 @@ import { FEATURES, hasFeature } from "@/utils/permissions";
 import ExportButton from "@/app/components/Export/ExportButton";
 
 const { Title, Text } = Typography;
+const DEFAULT_STATE = "Tamil Nadu";
 
 const TABLE_HEADER_STYLE: React.CSSProperties = { fontSize: 15, fontWeight: 600 };
 
@@ -172,10 +173,9 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
   const [members, setMembers] = useState<Member[]>([]);
   const [plans, setPlans] = useState<MembershipPlan[]>([]);
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
-  const [branchFilter, setBranchFilter] = useState<string>(defaultBranchId);
   const [nameSearch, setNameSearch] = useState("");
   const [debouncedNameSearch, setDebouncedNameSearch] = useState("");
-  const effectiveBranchId = canManageBranches ? branchFilter : defaultBranchId;
+  const effectiveBranchId = defaultBranchId;
 
   const [modalOpen, setModalOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -190,13 +190,6 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
   const [form] = Form.useForm<FormShape>();
   const watchedPhone = Form.useWatch("phone", form);
   const watchedBranchId = Form.useWatch("branchId", form);
-
-  useEffect(() => {
-    if (branchFilter !== defaultBranchId) {
-      setBranchFilter(defaultBranchId);
-      return;
-    }
-  }, [defaultBranchId, branchFilter]);
 
   const loadPlans = useCallback(async (branchId: string) => {
     if (!branchId) {
@@ -354,6 +347,7 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
       branchId: effectiveBranchId || defaultBranchId,
       gender: "male",
       dateOfJoining: dayjs(),
+      state: DEFAULT_STATE,
       country: "India",
       paidAmount: 0,
       paymentMethod: "cash" as const,
@@ -387,7 +381,7 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
         dob: m.profile.dob ? dayjs(m.profile.dob) : undefined,
         street: m.address.street,
         city: m.address.city,
-        state: m.address.state,
+        state: m.address.state || DEFAULT_STATE,
         zipcode: m.address.zipcode,
         country: m.address.country || "India",
         emergencyContacts: m.emergencyContacts?.length
@@ -861,16 +855,6 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
               { value: "active", label: "Active" },
               { value: "inactive", label: "Inactive" }
             ]}
-          />
-          <Select
-            showSearch
-            optionFilterProp="label"
-            style={{ minWidth: 220 }}
-            placeholder="Branch"
-            value={effectiveBranchId || undefined}
-            onChange={(v) => setBranchFilter(v)}
-            options={branchOptions}
-            disabled={!canManageBranches}
           />
           <Button icon={<ReloadOutlined />} onClick={() => void loadMembers()}>
             Refresh

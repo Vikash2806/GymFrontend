@@ -6,6 +6,7 @@ import { Typography } from "antd";
 import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
 import { hasPermission, type Permission } from "@/utils/permissions";
+import { getFirstAccessibleRoute } from "@/utils/permissions";
 import { isOwnerFromSession } from "@/utils/gymRole";
 
 type Props = {
@@ -27,6 +28,7 @@ export default function RbacPermissionGuard({
   const allowedByPermission = hasPermission(session, permission);
   const allowedByRole = !requireOwner || isOwnerFromSession(session);
   const allowed = allowedByPermission && allowedByRole;
+  const resolvedFallbackPath = fallbackPath === "/pages/dashboard" ? getFirstAccessibleRoute(session) : fallbackPath;
 
   useEffect(() => {
     setMounted(true);
@@ -37,9 +39,9 @@ export default function RbacPermissionGuard({
       return;
     }
     if (!allowed) {
-      router.replace(fallbackPath);
+      router.replace(resolvedFallbackPath);
     }
-  }, [allowed, fallbackPath, mounted, router]);
+  }, [allowed, resolvedFallbackPath, mounted, router]);
 
   if (!mounted || !allowed) {
     return <Typography.Text type="secondary">Checking permissions...</Typography.Text>;
