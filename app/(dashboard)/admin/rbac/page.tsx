@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { App, Button, Card, Checkbox, Col, Divider, Row, Space, Tabs, Tag, Typography } from "antd";
 import apiClient from "@/utils/api";
 import RbacPermissionGuard from "@/app/components/Auth/RbacPermissionGuard";
@@ -33,16 +33,21 @@ export default function RbacAdminPage() {
   const { message } = App.useApp();
   const dispatch = useAppDispatch();
   const config = useAppSelector(selectRbacConfig);
+  const messageRef = useRef(message);
   const [activeRole, setActiveRole] = useState<"owner" | "manager" | "staff">("owner");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    messageRef.current = message;
+  }, [message]);
 
   const loadPermissions = useCallback(async () => {
     setLoading(true);
     try {
       const { data } = await apiClient.get<PermissionsResponse>("/admin/rbac/permissions");
       if (!data.success) {
-        message.error(data.message ?? "Could not load permissions.");
+        messageRef.current.error(data.message ?? "Could not load permissions.");
         return;
       }
       dispatch(
@@ -53,11 +58,11 @@ export default function RbacAdminPage() {
         })
       );
     } catch {
-      message.error("Could not load permissions.");
+      messageRef.current.error("Could not load permissions.");
     } finally {
       setLoading(false);
     }
-  }, [dispatch, message]);
+  }, [dispatch]);
 
   const roleFeatures = config[activeRole];
   const sections = useMemo(
