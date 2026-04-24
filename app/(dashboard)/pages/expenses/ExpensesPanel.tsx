@@ -637,15 +637,6 @@ export default function ExpensesPanel() {
                       }}
                       options={categoryOptions}
                     />
-                    <Button
-                      icon={<ReloadOutlined />}
-                      onClick={() => {
-                        void loadExpenses();
-                        void loadCategorySummary();
-                      }}
-                    >
-                      Refresh
-                    </Button>
                   </Space>
                   <Space wrap>
                     <ExportButton

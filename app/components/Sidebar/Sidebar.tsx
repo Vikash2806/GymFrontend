@@ -12,7 +12,8 @@ import {
   MoneyCollectOutlined,
   UserAddOutlined,
   FundOutlined,
-  WalletOutlined
+  WalletOutlined,
+  SwapOutlined
 } from "@ant-design/icons";
 import { usePathname, useRouter } from "next/navigation";
 import type { MenuProps } from "antd";
@@ -40,7 +41,8 @@ const mainMenuItems: MenuItem[] = [
   { key: "Dashboard", label: "Dashboard", icon: <HomeOutlined />, route: "/pages/dashboard" },
   { key: "Branches", label: "Branches", icon: <BankOutlined />, route: "/pages/branches" },
   { key: "GymMembers", label: "Members", icon: <TeamOutlined />, route: "/pages/members" },
-  { key: "Billing", label: "Billing", icon: <MoneyCollectOutlined />, route: "/pages/billing" },
+  { key: "Billing", label: "Overdue Payments", icon: <MoneyCollectOutlined />, route: "/pages/billing" },
+  { key: "Transactions", label: "Transactions", icon: <SwapOutlined />, route: "/pages/transactions" },
   {
     key: "Finance",
     label: "Financial Overview",
@@ -107,6 +109,9 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
         return hasFeature(session, FEATURES.MEMBER_MANAGEMENT);
       }
       if (item.key === "Billing") {
+        return hasFeature(session, FEATURES.BILLING_DASHBOARD);
+      }
+      if (item.key === "Transactions") {
         return hasFeature(session, FEATURES.BILLING_DASHBOARD);
       }
       if (item.key === "Finance") {

@@ -6,10 +6,12 @@ import {
   App,
   Avatar,
   Button,
+  Checkbox,
   Col,
   DatePicker,
   Descriptions,
   Divider,
+  Dropdown,
   Form,
   Input,
   InputNumber,
@@ -29,6 +31,7 @@ import type { ColumnsType } from "antd/es/table";
 import type { TableProps } from "antd";
 import type { UploadFile } from "antd/es/upload/interface";
 import {
+  CloseCircleOutlined,
   ClockCircleOutlined,
   DeleteOutlined,
   EditOutlined,
@@ -37,7 +40,6 @@ import {
   PhoneOutlined,
   PlusOutlined,
   QuestionCircleOutlined,
-  ReloadOutlined,
   UploadOutlined
 } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
@@ -128,7 +130,53 @@ function mapMemberFieldLabel(path: Array<string | number>): string {
   return directMap[root] ?? root;
 }
 
-type ListResponse = { success: boolean; members?: Member[]; message?: string };
+function mapMemberFieldLabel(path: Array<string | number>): string {
+  const normalized = path.map((part) => String(part));
+  const root = normalized[0] ?? "";
+  if (root === "emergencyContacts") {
+    const leaf = normalized[2] ?? "";
+    if (leaf === "name") {
+      return "Emergency contact name";
+    }
+    if (leaf === "phone") {
+      return "Emergency contact phone";
+    }
+    if (leaf === "relation") {
+      return "Emergency contact relation";
+    }
+    return "Emergency contact";
+  }
+  const directMap: Record<string, string> = {
+    firstName: "First Name",
+    lastName: "Last Name",
+    phone: "Mobile number",
+    branchId: "Branch",
+    email: "Email",
+    gender: "Gender",
+    dob: "Date of Birth",
+    dateOfJoining: "Date of Joining",
+    street: "Street Address",
+    city: "City",
+    state: "State",
+    zipcode: "Zipcode",
+    country: "Country",
+    planId: "Membership plan",
+    paidAmount: "Paid amount",
+    paymentMethod: "Payment method",
+    notes: "Notes"
+  };
+  return directMap[root] ?? root;
+}
+
+type ListResponse = {
+  success: boolean;
+  members?: Member[];
+  total?: number;
+  page?: number;
+  pageSize?: number;
+  message?: string;
+};
+
 type MemberResponse = { success: boolean; member?: Member; message?: string };
 type PlansResponse = { success: boolean; plans?: MembershipPlan[]; message?: string };
 type MemberLookupResponse = {
@@ -138,6 +186,18 @@ type MemberLookupResponse = {
   message?: string;
 };
 type SubscriptionCreateResponse = { success: boolean; message?: string };
+type SubscriptionPatchResponse = { success: boolean; message?: string };
+type SubscriptionHistoryItem = {
+  _id: string;
+  planName: string;
+  status: "active" | "expired" | "cancelled" | "paused";
+  startDate: string;
+  endDate: string;
+  paymentSummary: { totalAmount: number; paidAmount: number; pendingAmount: number; status: string };
+  createdAt: string;
+};
+type SubscriptionHistoryResponse = { success: boolean; subscriptions?: SubscriptionHistoryItem[]; message?: string };
+type MemberTableColumnKey = "member" | "status" | "phone" | "age" | "plan" | "billing" | "actions";
 
 function ageFromDob(iso: string | null): string {
   if (!iso) {
@@ -238,11 +298,15 @@ export default function MembersPanel({
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [nameSearch, setNameSearch] = useState("");
   const [debouncedNameSearch, setDebouncedNameSearch] = useState("");
+  const [membersPage, setMembersPage] = useState(1);
+  const [membersPageSize, setMembersPageSize] = useState(10);
+  const [membersTotal, setMembersTotal] = useState(0);
   const effectiveBranchId = defaultBranchId;
 
   const [modalOpen, setModalOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailMember, setDetailMember] = useState<Member | null>(null);
+  const [detailMembershipHistory, setDetailMembershipHistory] = useState<SubscriptionHistoryItem[]>([]);
   const [editing, setEditing] = useState<Member | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [avatarList, setAvatarList] = useState<UploadFile[]>([]);
@@ -250,8 +314,18 @@ export default function MembersPanel({
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupMember, setLookupMember] = useState<Member | null>(null);
   const [lookupNote, setLookupNote] = useState<string>("");
-  const [pendingMembershipFlow, setPendingMembershipFlow] = useState(false);
-  const pendingMemberDraftRef = useRef<Partial<FormShape> | null>(null);
+  const [newMembershipTarget, setNewMembershipTarget] = useState<Member | null>(null);
+  const [newMembershipPlanId, setNewMembershipPlanId] = useState<string>("");
+  const [newMembershipPaidAmount, setNewMembershipPaidAmount] = useState<number>(0);
+  const [visibleColumnKeys, setVisibleColumnKeys] = useState<MemberTableColumnKey[]>([
+    "member",
+    "status",
+    "phone",
+    "age",
+    "plan",
+    "billing",
+    "actions"
+  ]);
   const planRequestSeq = useRef(0);
   const [form] = Form.useForm<FormShape>();
   const watchedPhone = Form.useWatch("phone", form);
@@ -289,6 +363,8 @@ export default function MembersPanel({
   const loadMembers = useCallback(async () => {
     if (!effectiveBranchId) {
       setMembers([]);
+      setMembersTotal(0);
+      setMembersPage(1);
       onMemberCountChange?.(0);
       return;
     }
@@ -298,12 +374,20 @@ export default function MembersPanel({
       if (statusFilter !== "all") {
         params.status = statusFilter;
       }
+      params.page = String(membersPage);
+      params.pageSize = String(membersPageSize);
+      if (debouncedNameSearch) {
+        params.search = debouncedNameSearch;
+      }
       const { data } = await apiClient.get<ListResponse>("/gym/members", { params });
       if (data.success && Array.isArray(data.members)) {
         setMembers(data.members);
-        onMemberCountChange?.(data.members.length);
+        const total = typeof data.total === "number" ? data.total : data.members.length;
+        setMembersTotal(total);
+        onMemberCountChange?.(total);
       } else {
         setMembers([]);
+        setMembersTotal(0);
         onMemberCountChange?.(0);
         if (data.message) {
           message.error(data.message);
@@ -316,11 +400,12 @@ export default function MembersPanel({
           : undefined;
       message.error(msg ?? "Could not load members.");
       setMembers([]);
+      setMembersTotal(0);
       onMemberCountChange?.(0);
     } finally {
       setLoading(false);
     }
-  }, [effectiveBranchId, statusFilter, onMemberCountChange, message]);
+  }, [effectiveBranchId, statusFilter, membersPage, membersPageSize, debouncedNameSearch, onMemberCountChange, message]);
 
   const planBranchId = useMemo(() => {
     if (editing) {
@@ -360,6 +445,10 @@ export default function MembersPanel({
     }, 250);
     return () => globalThis.clearTimeout(timer);
   }, [nameSearch]);
+
+  useEffect(() => {
+    setMembersPage(1);
+  }, [effectiveBranchId, statusFilter, debouncedNameSearch]);
 
   const branchOptions = useMemo(() => {
     const br = session?.gym?.branches ?? [];
@@ -414,25 +503,11 @@ export default function MembersPanel({
     void loadPlans(targetBranchId);
   }, [editing, form, effectiveBranchId, defaultBranchId, loadPlans]);
 
-  const displayedMembers = useMemo(() => {
-    if (!debouncedNameSearch) {
-      return members;
-    }
-    const digitsQuery = debouncedNameSearch.replace(/\D/g, "");
-    return members.filter((member) => {
-      const fullName = `${member.firstName} ${member.lastName}`.toLowerCase();
-      const memberPhone = member.profile.phone ?? "";
-      return (
-        fullName.includes(debouncedNameSearch) ||
-        member.firstName.toLowerCase().includes(debouncedNameSearch) ||
-        member.lastName.toLowerCase().includes(debouncedNameSearch) ||
-        (digitsQuery.length > 0 && memberPhone.includes(digitsQuery))
-      );
-    });
-  }, [members, debouncedNameSearch]);
-
   const openCreate = () => {
     setEditing(null);
+    setNewMembershipTarget(null);
+    setNewMembershipPlanId("");
+    setNewMembershipPaidAmount(0);
     setAvatarList([]);
     setLookupMember(null);
     setLookupNote("");
@@ -454,14 +529,15 @@ export default function MembersPanel({
   };
 
   const startCreateMembershipFromMemberModal = () => {
-    pendingMemberDraftRef.current = form.getFieldsValue(true);
-    setPendingMembershipFlow(true);
     setModalOpen(false);
     onRequestCreateMembershipPlan?.();
   };
 
   const openEdit = async (record: Member) => {
     setEditing(record);
+    setNewMembershipTarget(null);
+    setNewMembershipPlanId("");
+    setNewMembershipPaidAmount(0);
     setAvatarList([]);
     setLookupMember(null);
     setLookupNote("");
@@ -511,73 +587,64 @@ export default function MembersPanel({
   };
 
   const closeModal = () => {
-    const close = () => {
-      setModalOpen(false);
-      setEditing(null);
-      form.resetFields();
-      setAvatarList([]);
-      setLookupMember(null);
-      setLookupNote("");
-      setLookupLoading(false);
-      setModalDirty(false);
-      clearDirty("members-modal");
-    };
-    if (modalDirty) {
-      confirmNavigation(close);
-      return;
-    }
-    close();
+    setModalOpen(false);
+    setEditing(null);
+    form.resetFields();
+    setAvatarList([]);
+    setLookupMember(null);
+    setLookupNote("");
+    setLookupLoading(false);
   };
 
-  useEffect(() => {
-    if (!createdPlanFromMemberships || !pendingMembershipFlow) {
+  const requestCloseModal = useCallback(() => {
+    if (modalDirty) {
+      confirmNavigation(() => {
+        closeModal();
+      });
       return;
     }
-    setPlans((prev) => {
-      if (prev.some((plan) => plan._id === createdPlanFromMemberships._id)) {
-        return prev;
-      }
-      const syntheticPlan: MembershipPlan = {
-        _id: createdPlanFromMemberships._id,
-        gymId: session?.gym?.id ?? session?.user?.defaults?.gymId ?? "",
-        branchId: String(form.getFieldValue("branchId") ?? ""),
-        name: createdPlanFromMemberships.name,
-        type: "",
-        duration: 0,
-        price: 0,
-        description: "",
-        isActive: true,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-      return [syntheticPlan, ...prev];
-    });
+    closeModal();
+  }, [modalDirty, confirmNavigation]);
 
-    const draftValues = pendingMemberDraftRef.current ?? {};
-    const nextValues: Partial<FormShape> = {
-      ...draftValues,
-      planId: createdPlanFromMemberships._id
-    };
-    if (!nextValues.branchId) {
-      nextValues.branchId = effectiveBranchId || defaultBranchId;
-    }
+  const openNewMembership = (record: Member) => {
+    setEditing(null);
+    setNewMembershipTarget(record);
+    setNewMembershipPlanId("");
+    setNewMembershipPaidAmount(0);
+    setAvatarList([]);
+    setLookupLoading(false);
+    setLookupMember(record);
+    setLookupNote(`Assigning new membership for ${record.firstName} ${record.lastName}.`);
+    void loadPlans(record.branchId);
     form.resetFields();
-    form.setFieldsValue(nextValues);
     setModalOpen(true);
-    setPendingMembershipFlow(false);
-    pendingMemberDraftRef.current = null;
-    setModalDirty(true);
-    setDirty("members-modal", true);
-    onCreatedPlanHandled?.();
-  }, [
-    createdPlanFromMemberships,
-    pendingMembershipFlow,
-    form,
-    effectiveBranchId,
-    defaultBranchId,
-    setDirty,
-    onCreatedPlanHandled
-  ]);
+  };
+
+  const handleCancelMembership = async (record: Member) => {
+    const subscriptionId = record.currentSubscription?.subscriptionId;
+    if (!subscriptionId) {
+      message.error("No current membership found.");
+      return;
+    }
+    try {
+      const { data } = await apiClient.patch<SubscriptionPatchResponse>(
+        `/gym/members/${record._id}/subscriptions/${subscriptionId}`,
+        { status: "cancelled", reverseOverdue: true }
+      );
+      if (data.success) {
+        message.success("Membership cancelled and overdue reversed.");
+        await loadMembers();
+      } else {
+        message.error(data.message ?? "Could not cancel membership.");
+      }
+    } catch (e: unknown) {
+      const msg =
+        e && typeof e === "object" && "response" in e
+          ? (e as { response?: { data?: { message?: string } } }).response?.data?.message
+          : undefined;
+      message.error(msg ?? "Could not cancel membership.");
+    }
+  };
 
   const lookupExistingMember = useCallback(
     async (phoneDigits: string, branchId: string) => {
@@ -613,7 +680,7 @@ export default function MembersPanel({
   );
 
   useEffect(() => {
-    if (!modalOpen || Boolean(editing)) {
+    if (!modalOpen || Boolean(editing) || Boolean(newMembershipTarget)) {
       return;
     }
     const phoneDigits = stripToIndianMobileDigits(watchedPhone ?? "");
@@ -628,22 +695,28 @@ export default function MembersPanel({
       void lookupExistingMember(phoneDigits, scopedBranchId);
     }, 350);
     return () => globalThis.clearTimeout(timer);
-  }, [modalOpen, editing, watchedPhone, watchedBranchId, lookupExistingMember]);
+  }, [modalOpen, editing, newMembershipTarget, watchedPhone, watchedBranchId, lookupExistingMember]);
 
   const closeDetail = () => {
     setDetailOpen(false);
     setDetailMember(null);
+    setDetailMembershipHistory([]);
   };
 
   const openView = async (record: Member) => {
     setDetailOpen(true);
     setDetailMember(null);
+    setDetailMembershipHistory([]);
     try {
-      const { data } = await apiClient.get<MemberResponse>(`/gym/members/${record._id}`);
-      if (data.success && data.member) {
-        setDetailMember(data.member);
+      const [memberRes, historyRes] = await Promise.all([
+        apiClient.get<MemberResponse>(`/gym/members/${record._id}`),
+        apiClient.get<SubscriptionHistoryResponse>(`/gym/members/${record._id}/subscriptions`)
+      ]);
+      if (memberRes.data.success && memberRes.data.member) {
+        setDetailMember(memberRes.data.member);
+        setDetailMembershipHistory(historyRes.data.subscriptions ?? []);
       } else {
-        message.error(data.message ?? "Could not load member.");
+        message.error(memberRes.data.message ?? "Could not load member.");
         setDetailOpen(false);
       }
     } catch (e: unknown) {
@@ -688,6 +761,33 @@ export default function MembersPanel({
 
   const onSubmit = async () => {
     try {
+      if (newMembershipTarget) {
+        if (!newMembershipPlanId) {
+          message.error("Select a membership plan.");
+          return;
+        }
+        setSubmitting(true);
+        const subRes = await apiClient.post<SubscriptionCreateResponse>(
+          `/gym/members/${newMembershipTarget._id}/subscriptions`,
+          {
+            planId: newMembershipPlanId,
+            startDate: new Date().toISOString(),
+            paidAmount: newMembershipPaidAmount,
+            method: "cash",
+            transactionRef: null,
+            autoRenew: false
+          }
+        );
+        if (subRes.data.success) {
+          message.success("New membership assigned.");
+          closeModal();
+          await loadMembers();
+        } else {
+          message.error(subRes.data.message ?? "Could not assign membership.");
+        }
+        return;
+      }
+
       const values = await form.validateFields();
       setSubmitting(true);
 
@@ -908,6 +1008,7 @@ export default function MembersPanel({
       {
         title: "Member",
         key: "member",
+        width: 180,
         ellipsis: true,
         render: (_, record) => (
           <Space>
@@ -923,11 +1024,11 @@ export default function MembersPanel({
         )
       },
       {
-        title: "Status",
+        title: "Membership Status",
         key: "status",
         width: 100,
         render: (_, record) => (
-          <Tag color={record.status === "active" ? "success" : "default"}>
+          <Tag color={record.status === "active" ? "success" : "error"}>
             {record.status === "active" ? "ACTIVE" : "INACTIVE"}
           </Tag>
         )
@@ -978,10 +1079,40 @@ export default function MembersPanel({
       {
         title: "Actions",
         key: "actions",
-        width: 120,
+        width: 280,
         fixed: "right",
         render: (_, record) => (
-          <Space size={0}>
+          <Space size={4} wrap>
+            <Tooltip title="New Membership">
+              <Button
+                type="link"
+                icon={<PlusOutlined />}
+                onClick={() => openNewMembership(record)}
+                aria-label="New membership"
+                disabled={!canCreateMember || record.currentSubscription?.status === "active"}
+                style={{ color: token.colorSuccess }}
+              >
+                New Membership
+              </Button>
+            </Tooltip>
+            <Popconfirm
+              title="Cancel membership and reverse overdue?"
+              okText="Cancel Membership"
+              onConfirm={() => void handleCancelMembership(record)}
+              disabled={!record.currentSubscription}
+            >
+              <Tooltip title="Cancel Membership">
+                <Button
+                  type="link"
+                  icon={<CloseCircleOutlined />}
+                  aria-label="Cancel membership"
+                  disabled={!record.currentSubscription}
+                  danger
+                >
+                  Cancel
+                </Button>
+              </Tooltip>
+            </Popconfirm>
             <Tooltip title="View">
               <Button type="text" icon={<EyeOutlined />} onClick={() => void openView(record)} aria-label="View member" />
             </Tooltip>
@@ -1009,6 +1140,28 @@ export default function MembersPanel({
         )
       }
     ];
+
+  const visibleColumns = useMemo(
+    () =>
+      columns.filter((column) => {
+        const key = String(column.key ?? "") as MemberTableColumnKey;
+        return visibleColumnKeys.includes(key);
+      }),
+    [columns, visibleColumnKeys]
+  );
+
+  const columnOptions: Array<{ label: string; value: MemberTableColumnKey }> = useMemo(
+    () => [
+      { label: "Member", value: "member" },
+      { label: "Membership Status", value: "status" },
+      { label: "Mobile Number", value: "phone" },
+      { label: "Age", value: "age" },
+      { label: "Membership", value: "plan" },
+      { label: "Billing", value: "billing" },
+      { label: "Actions", value: "actions" }
+    ],
+    []
+  );
 
   return (
     <div>
@@ -1043,9 +1196,40 @@ export default function MembersPanel({
               { value: "inactive", label: "Inactive" }
             ]}
           />
-          <Button icon={<ReloadOutlined />} onClick={() => void loadMembers()}>
-            Refresh
-          </Button>
+          <Dropdown
+            trigger={["click"]}
+            popupRender={() => (
+              <div
+                style={{
+                  background: token.colorBgElevated,
+                  border: `1px solid ${token.colorBorderSecondary}`,
+                  borderRadius: 8,
+                  padding: 10,
+                  minWidth: 220
+                }}
+              >
+                <Checkbox.Group
+                  style={{ display: "grid", gap: 6 }}
+                  value={visibleColumnKeys}
+                  onChange={(checked) => {
+                    const next = checked.map((v) => String(v) as MemberTableColumnKey);
+                    if (next.length === 0) {
+                      return;
+                    }
+                    setVisibleColumnKeys(next);
+                  }}
+                >
+                  {columnOptions.map((option) => (
+                    <Checkbox key={option.value} value={option.value}>
+                      {option.label}
+                    </Checkbox>
+                  ))}
+                </Checkbox.Group>
+              </div>
+            )}
+          >
+            <Button>Manage Columns</Button>
+          </Dropdown>
           <ExportButton
             endpoint="/gym/exports/members"
             params={{
@@ -1065,13 +1249,19 @@ export default function MembersPanel({
       <Table<Member>
         rowKey="_id"
         loading={loading}
-        columns={columns}
-        dataSource={displayedMembers}
+        columns={visibleColumns}
+        dataSource={members}
         components={tableComponents}
         rowSelection={{ type: "checkbox" }}
         pagination={{
-          pageSize: 10,
+          current: membersPage,
+          pageSize: membersPageSize,
+          total: membersTotal,
           showSizeChanger: true,
+          onChange: (page, pageSize) => {
+            setMembersPage(page);
+            setMembersPageSize(pageSize);
+          },
           showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} members`
         }}
         scroll={{ x: 1100 }}
@@ -1102,10 +1292,10 @@ export default function MembersPanel({
                   {detailMember.firstName} {detailMember.lastName}
                 </Title>
                 <Space size={8} style={{ marginTop: 8 }}>
-                  <Tag color={detailMember.status === "active" ? "success" : "default"}>
+                  <Tag color={detailMember.status === "active" ? "success" : "error"}>
                     {detailMember.status === "active" ? "ACTIVE" : "INACTIVE"}
                   </Tag>
-                  {detailMember.flags?.hasPendingPayment ? <Tag color="warning">PENDING</Tag> : null}
+                  {detailMember.flags?.hasPendingPayment ? <Tag color="warning">PAYMENT PENDING</Tag> : null}
                 </Space>
               </div>
             </Space>
@@ -1148,6 +1338,52 @@ export default function MembersPanel({
               </Descriptions.Item>
             </Descriptions>
             <Divider orientationMargin={8} />
+            <Text strong>Membership history</Text>
+            <div style={{ marginTop: 8 }}>
+              {detailMembershipHistory.length === 0 ? (
+                <Text type="secondary">No membership history found.</Text>
+              ) : (
+                <Space direction="vertical" style={{ width: "100%" }} size={8}>
+                  {detailMembershipHistory.map((sub) => (
+                    <div
+                      key={sub._id}
+                      style={{
+                        border: `1px solid ${token.colorBorderSecondary}`,
+                        borderRadius: 8,
+                        padding: "8px 12px"
+                      }}
+                    >
+                      <Space style={{ width: "100%", justifyContent: "space-between" }}>
+                        <Text strong>{sub.planName}</Text>
+                        <Tag
+                          color={
+                            sub.status === "active"
+                              ? "success"
+                              : sub.status === "cancelled"
+                                ? "error"
+                                : sub.status === "expired"
+                                  ? "orange"
+                                  : "default"
+                          }
+                        >
+                          {sub.status.toUpperCase()}
+                        </Tag>
+                      </Space>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        {formatDisplayDate(sub.startDate)} - {formatDisplayDate(sub.endDate)}
+                      </Text>
+                      <div>
+                        <Text style={{ fontSize: 12 }}>
+                          Paid: {formatInrWhole(sub.paymentSummary.paidAmount)} | Pending:{" "}
+                          {formatInrWhole(sub.paymentSummary.pendingAmount)}
+                        </Text>
+                      </div>
+                    </div>
+                  ))}
+                </Space>
+              )}
+            </div>
+            <Divider orientationMargin={8} />
             <Text strong>Personal details</Text>
             <Descriptions column={1} size="small" bordered style={{ marginTop: 8 }}>
               <Descriptions.Item label="Gender">{detailMember.profile.gender}</Descriptions.Item>
@@ -1166,17 +1402,23 @@ export default function MembersPanel({
       </Modal>
 
       <Modal
-        title={editing ? "Edit member" : "Add or enroll member"}
+        title={editing ? "Edit member" : newMembershipTarget ? "Assign new membership" : "Add or enroll member"}
         open={modalOpen}
-        onCancel={closeModal}
-        width={WIDE_MODAL_WIDTH}
+        onCancel={requestCloseModal}
+        width="min(1120px, calc(100vw - 24px))"
         styles={{ body: { maxHeight: "70vh", overflowY: "auto" } }}
         footer={[
-          <Button key="cancel" onClick={closeModal}>
+          <Button key="cancel" onClick={requestCloseModal}>
             Cancel
           </Button>,
           <Button key="submit" type="primary" loading={submitting} onClick={() => void onSubmit()}>
-            {editing ? "Save changes" : lookupMember ? "Enroll Existing Member" : "Create Member"}
+            {editing
+              ? "Save changes"
+              : newMembershipTarget
+                ? "Assign Membership"
+                : lookupMember
+                  ? "Enroll Existing Member"
+                  : "Create Member"}
           </Button>
         ]}
       >
@@ -1190,27 +1432,25 @@ export default function MembersPanel({
             setDirty("members-modal", true);
           }}
         >
-          <Title level={5} style={sectionTitleStyle}>Basic details</Title>
-          <div style={sectionCardStyle}>
-            <Row gutter={16}>
-              <Col xs={24} sm={12}>
-                <Form.Item
-                  name="firstName"
-                  label="First Name"
-                  rules={[{ required: true, message: "Enter first name" }]}
-                >
-                  <Input placeholder="Enter first name" allowClear />
-                </Form.Item>
-              </Col>
-              <Col xs={24} sm={12}>
-                <Form.Item
-                  name="lastName"
-                  label="Last Name"
-                >
-                  <Input placeholder="Enter last name" allowClear />
-                </Form.Item>
-              </Col>
-            </Row>
+          <Row gutter={16}>
+            <Col xs={24} sm={12}>
+              <Form.Item
+                name="firstName"
+                label="First Name"
+                rules={[{ required: true, message: "Enter first name" }]}
+              >
+                <Input placeholder="Enter first name" allowClear />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Form.Item
+                name="lastName"
+                label="Last Name"
+              >
+                <Input placeholder="Enter last name" allowClear />
+              </Form.Item>
+            </Col>
+          </Row>
 
             <Row gutter={16}>
             <Col xs={24} sm={12}>
@@ -1268,7 +1508,6 @@ export default function MembersPanel({
                 </Form.Item>
               </Col>
             </Row>
-          </div>
           {!editing && lookupLoading ? (
             <Alert type="info" message="Checking existing member by mobile..." showIcon style={{ marginBottom: 16 }} />
           ) : null}
@@ -1521,12 +1760,9 @@ export default function MembersPanel({
             </Form.List>
           </div>
 
-          <Title level={5} style={sectionTitleStyle}>Additional notes</Title>
-          <div style={sectionCardStyle}>
-            <Form.Item name="notes" label="Notes" style={{ marginBottom: 0 }}>
-              <Input.TextArea rows={2} placeholder="Notes (e.g. health)" />
-            </Form.Item>
-          </div>
+          <Form.Item name="notes" label="Notes">
+            <Input.TextArea rows={2} placeholder="Notes (e.g. health)" />
+          </Form.Item>
         </Form>
       </Modal>
     </div>
