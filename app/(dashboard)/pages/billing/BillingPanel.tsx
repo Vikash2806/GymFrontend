@@ -22,7 +22,6 @@ import dayjs, { type Dayjs } from "dayjs";
 import apiClient from "@/utils/api";
 import { formatInr } from "@/utils/formatCurrency";
 import { WIDE_MODAL_WIDTH } from "@/utils/modalWidths";
-import type { Member } from "@/types/member";
 import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
 import ExportButton from "@/app/components/Export/ExportButton";
@@ -31,7 +30,7 @@ const { Title, Text } = Typography;
 
 const TABLE_HEADER_STYLE: React.CSSProperties = { fontSize: 15, fontWeight: 600 };
 
-const tableComponents: TableProps<Member>["components"] = {
+const tableComponents: TableProps<BillingRecord>["components"] = {
   header: {
     cell: (props: React.ThHTMLAttributes<HTMLTableCellElement>) => (
       <th {...props} style={{ ...props.style, ...TABLE_HEADER_STYLE }} />
@@ -39,9 +38,23 @@ const tableComponents: TableProps<Member>["components"] = {
   }
 };
 
+type BillingRecord = {
+  memberId: string;
+  memberName: string;
+  phone: string;
+  branchId: string;
+  subscriptionId: string;
+  planName: string;
+  membershipStatus: "active" | "expired" | "cancelled" | "paused";
+  totalAmount: number;
+  paidAmount: number;
+  pendingAmount: number;
+  canAddPayment: boolean;
+};
+
 type ListResponse = {
   success: boolean;
-  members?: Member[];
+  records?: BillingRecord[];
   total?: number;
   page?: number;
   pageSize?: number;
@@ -51,7 +64,7 @@ type ListResponse = {
 type PostPaymentResponse = {
   success: boolean;
   message?: string;
-  member?: Member;
+  member?: unknown;
 };
 
 type PaymentFormValues = {
@@ -67,7 +80,7 @@ export default function BillingPanel() {
   const defaultBranchId = session?.activeBranch?.id ?? session?.user?.defaults?.branchId ?? "";
 
   const [loading, setLoading] = useState(false);
-  const [members, setMembers] = useState<Member[]>([]);
+  const [members, setMembers] = useState<BillingRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -76,7 +89,7 @@ export default function BillingPanel() {
   const [searchDraft, setSearchDraft] = useState("");
 
   const [payModalOpen, setPayModalOpen] = useState(false);
-  const [payingMember, setPayingMember] = useState<Member | null>(null);
+  const [payingMember, setPayingMember] = useState<BillingRecord | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm<PaymentFormValues>();
 
@@ -105,7 +118,6 @@ export default function BillingPanel() {
     try {
       const params: Record<string, string> = {
         branchId: branchFilter,
-        pendingPayment: "true",
         page: String(page),
         pageSize: String(pageSize)
       };
@@ -113,10 +125,10 @@ export default function BillingPanel() {
       if (q) {
         params.search = q;
       }
-      const { data } = await apiClient.get<ListResponse>("/gym/members", { params });
-      if (data.success && Array.isArray(data.members)) {
-        setMembers(data.members);
-        setTotal(typeof data.total === "number" ? data.total : data.members.length);
+      const { data } = await apiClient.get<ListResponse>("/gym/billing/records", { params });
+      if (data.success && Array.isArray(data.records)) {
+        setMembers(data.records);
+        setTotal(typeof data.total === "number" ? data.total : data.records.length);
       } else {
         setMembers([]);
         setTotal(0);
@@ -142,9 +154,8 @@ export default function BillingPanel() {
   }, [loadMembers]);
 
   const openPay = useCallback(
-    (record: Member) => {
-      const sub = record.currentSubscription;
-      if (!sub) {
+    (record: BillingRecord) => {
+      if (!record.canAddPayment) {
         message.warning("No active subscription on file for this member.");
         return;
       }
@@ -158,13 +169,12 @@ export default function BillingPanel() {
     if (!payModalOpen) {
       return;
     }
-    const sub = payingMember?.currentSubscription;
-    if (!sub) {
+    if (!payingMember) {
       form.resetFields();
       return;
     }
     form.setFieldsValue({
-      amount: sub.payment.pendingAmount,
+      amount: payingMember.pendingAmount,
       method: "cash",
       transactionRef: undefined
     });
@@ -177,12 +187,12 @@ export default function BillingPanel() {
   };
 
   const submitPayment = async () => {
-    if (!payingMember?.currentSubscription) {
+    if (!payingMember) {
       return;
     }
     const values = await form.validateFields();
-    const subId = payingMember.currentSubscription.subscriptionId;
-    const pending = payingMember.currentSubscription.payment.pendingAmount;
+    const subId = payingMember.subscriptionId;
+    const pending = payingMember.pendingAmount;
     if (values.amount > pending + 0.0001) {
       message.error(`Amount cannot exceed outstanding balance (${formatInr(pending)}).`);
       return;
@@ -190,7 +200,7 @@ export default function BillingPanel() {
     setSubmitting(true);
     try {
       const { data } = await apiClient.post<PostPaymentResponse>(
-        `/gym/members/${payingMember._id}/subscriptions/${subId}/payments`,
+        `/gym/members/${payingMember.memberId}/subscriptions/${subId}/payments`,
         {
           amount: values.amount,
           method: values.method,
@@ -217,7 +227,7 @@ export default function BillingPanel() {
     }
   };
 
-  const columns: ColumnsType<Member> = useMemo(
+  const columns: ColumnsType<BillingRecord> = useMemo(
     () => [
       {
         title: "Member",
@@ -228,7 +238,7 @@ export default function BillingPanel() {
           return (
             <Space direction="vertical" size={0}>
               <Text strong>
-                {record.firstName} {record.lastName}
+                {record.memberName}
               </Text>
               <Text type="secondary" style={{ fontSize: 12 }}>
                 {(code ?? record.branchId).toLowerCase()}
@@ -242,35 +252,42 @@ export default function BillingPanel() {
         key: "membership",
         width: 160,
         ellipsis: true,
-        render: (_, record) => record.currentSubscription?.planName ?? "—"
+        render: (_, record) => record.planName
+      },
+      {
+        title: "Status",
+        key: "membershipStatus",
+        width: 120,
+        render: (_, record) => (
+          <Text style={{ color: record.membershipStatus === "cancelled" ? token.colorError : token.colorText }}>
+            {record.membershipStatus.toUpperCase()}
+          </Text>
+        )
       },
       {
         title: "Total Amount",
         key: "total",
         width: 140,
         align: "right" as const,
-        render: (_, record) =>
-          record.currentSubscription ? formatInr(record.currentSubscription.payment.totalAmount) : "—"
+        render: (_, record) => formatInr(record.totalAmount)
       },
       {
         title: "Paid Amount",
         key: "paid",
         width: 140,
         align: "right" as const,
-        render: (_, record) =>
-          record.currentSubscription ? formatInr(record.currentSubscription.payment.paidAmount) : "—"
+        render: (_, record) => formatInr(record.paidAmount)
       },
       {
         title: "Overdue Amount",
         key: "overdue",
         width: 150,
         align: "right" as const,
-        render: (_, record) =>
-          record.currentSubscription ? (
-            <Text style={{ color: token.colorWarning }}>{formatInr(record.currentSubscription.payment.pendingAmount)}</Text>
-          ) : (
-            "—"
-          )
+        render: (_, record) => (
+          <Text style={{ color: record.pendingAmount > 0 ? token.colorWarning : token.colorTextSecondary }}>
+            {formatInr(record.pendingAmount)}
+          </Text>
+        )
       },
       {
         title: "Actions",
@@ -278,13 +295,13 @@ export default function BillingPanel() {
         width: 160,
         fixed: "right" as const,
         render: (_, record) => (
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => openPay(record)}>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => openPay(record)} disabled={!record.canAddPayment}>
             Add Payment
           </Button>
         )
       }
     ],
-    [branchCodeById, openPay, token.colorWarning]
+    [branchCodeById, openPay, token.colorError, token.colorText, token.colorTextSecondary, token.colorWarning]
   );
 
   return (
@@ -335,8 +352,8 @@ export default function BillingPanel() {
         </Space>
       </div>
 
-      <Table<Member>
-        rowKey="_id"
+      <Table<BillingRecord>
+        rowKey={(row) => `${row.memberId}-${row.subscriptionId}`}
         loading={loading}
         columns={columns}
         dataSource={members}
@@ -370,12 +387,12 @@ export default function BillingPanel() {
         destroyOnHidden
         width={WIDE_MODAL_WIDTH}
       >
-        {payingMember?.currentSubscription ? (
+        {payingMember ? (
           <div style={{ marginBottom: 16 }}>
             <Text type="secondary">
-              {payingMember.firstName} {payingMember.lastName} · Outstanding{" "}
+              {payingMember.memberName} · Outstanding{" "}
               <Text strong style={{ color: token.colorWarning }}>
-                {formatInr(payingMember.currentSubscription.payment.pendingAmount)}
+                {formatInr(payingMember.pendingAmount)}
               </Text>
             </Text>
           </div>
@@ -391,7 +408,7 @@ export default function BillingPanel() {
                   if (v === undefined || v === null) {
                     return Promise.reject(new Error("Enter amount"));
                   }
-                  const pending = payingMember?.currentSubscription?.payment.pendingAmount ?? 0;
+                  const pending = payingMember?.pendingAmount ?? 0;
                   if (v <= 0) {
                     return Promise.reject(new Error("Amount must be greater than zero"));
                   }
