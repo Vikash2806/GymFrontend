@@ -34,7 +34,7 @@ export default function RbacAdminPage() {
   const dispatch = useAppDispatch();
   const config = useAppSelector(selectRbacConfig);
   const messageRef = useRef(message);
-  const [activeRole, setActiveRole] = useState<"owner" | "manager" | "staff">("owner");
+  const [activeRole, setActiveRole] = useState<"manager" | "staff">("manager");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -85,12 +85,9 @@ export default function RbacAdminPage() {
 
   const isLocked = useCallback(
     (feature: FeatureKey) => {
-      if (activeRole !== "owner" && (FEATURE_MAP.admin_only as readonly string[]).includes(feature)) {
-        return true;
-      }
-      return activeRole === "owner" && feature === "rbac_settings";
+      return (FEATURE_MAP.admin_only as readonly string[]).includes(feature);
     },
-    [activeRole]
+    []
   );
 
   const editableFeatures = useMemo(
@@ -185,9 +182,8 @@ export default function RbacAdminPage() {
       <Space direction="vertical" size={16} style={{ width: "100%" }}>
         <Tabs
           activeKey={activeRole}
-          onChange={(value) => setActiveRole(value as "owner" | "manager" | "staff")}
+          onChange={(value) => setActiveRole(value as "manager" | "staff")}
           items={[
-            { key: "owner", label: "Owner" },
             { key: "manager", label: "Manager" },
             { key: "staff", label: "Staff" }
           ]}
@@ -233,15 +229,13 @@ export default function RbacAdminPage() {
               <Row gutter={[32, 16]}>
                 {FEATURE_MAP.admin_only.map((feature) => {
                   const checked = roleFeatures.includes(feature);
-                  const ownerEditable = activeRole === "owner" && feature !== "rbac_settings";
-                  const disabled = !ownerEditable || loading || saving;
                   return (
                     <Col key={feature} xs={24} md={12}>
                       <Row justify="space-between" align="middle" wrap={false}>
                         <Col flex="auto">
                           <Checkbox
                             checked={checked}
-                            disabled={disabled}
+                            disabled
                             onChange={(event) =>
                               dispatch(
                                 toggleRoleFeature({
@@ -256,9 +250,7 @@ export default function RbacAdminPage() {
                           </Checkbox>
                         </Col>
                         <Col>
-                          <Tag color={activeRole === "owner" ? "red" : "default"}>
-                            {activeRole === "owner" ? "Admin only" : "Blocked"}
-                          </Tag>
+                          <Tag color="default">Blocked</Tag>
                         </Col>
                       </Row>
                     </Col>

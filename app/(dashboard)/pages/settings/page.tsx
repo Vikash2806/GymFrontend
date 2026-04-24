@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { App, Avatar, Button, Card, Form, Input, Space, Switch, Upload } from "antd";
-import { ShopOutlined, UploadOutlined } from "@ant-design/icons";
+import { App, Avatar, Button, Card, Form, Input, Space, Upload } from "antd";
+import { DeleteOutlined, ShopOutlined, UploadOutlined } from "@ant-design/icons";
 import RbacPermissionGuard from "@/app/components/Auth/RbacPermissionGuard";
 import { FEATURES, hasFeature } from "@/utils/permissions";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
@@ -27,7 +27,8 @@ export default function SettingsPage() {
   const gymLogo = session?.gym?.logoUrl ?? null;
   const canEditGymProfile = hasFeature(session, FEATURES.GYM_PROFILE);
   const [form] = Form.useForm<{ gymName: string; supportPhone?: string }>();
-  const [logoFile, setLogoFile] = useState<string | null>(null);
+  // undefined => unchanged, string => new/uploaded logo, null => explicitly remove logo
+  const [logoFile, setLogoFile] = useState<string | null | undefined>(undefined);
   const [saving, setSaving] = useState(false);
   const { setDirty, clearDirty } = useUnsavedChanges();
 
@@ -45,7 +46,7 @@ export default function SettingsPage() {
     const values = await form.validateFields();
     setSaving(true);
     try {
-      const nextLogo = logoFile ?? gymLogo ?? null;
+      const nextLogo = logoFile === undefined ? (gymLogo ?? null) : logoFile;
       await apiClient.patch("/gym/me", {
         name: values.gymName,
         logoUrl: nextLogo
@@ -69,7 +70,7 @@ export default function SettingsPage() {
           key={gymName}
           form={form}
           layout="vertical"
-          initialValues={{ gymName, supportPhone: "", renewalReminders: true }}
+          initialValues={{ gymName, supportPhone: "" }}
           onValuesChange={() => {
             setDirty("settings-page", true);
           }}
@@ -82,37 +83,49 @@ export default function SettingsPage() {
               <Avatar
                 shape="square"
                 size={72}
-                src={logoFile ?? gymLogo ?? undefined}
+                src={(logoFile === undefined ? gymLogo : logoFile) ?? undefined}
                 style={{ backgroundColor: "#1677ff" }}
                 icon={<ShopOutlined />}
               />
-              <Upload
-                accept="image/*"
-                maxCount={1}
-                showUploadList={false}
-                disabled={!canEditGymProfile}
-                beforeUpload={async (file) => {
-                  try {
-                    const dataUrl = await readFileAsDataUrl(file);
-                    setLogoFile(dataUrl);
-                    setDirty("settings-page", true);
-                  } catch {
-                    message.error("Could not read file.");
-                  }
-                  return false;
-                }}
-              >
-                <Button icon={<UploadOutlined />} disabled={!canEditGymProfile}>
-                  Upload profile picture
-                </Button>
-              </Upload>
+              <Space>
+                <Upload
+                  accept="image/*"
+                  maxCount={1}
+                  showUploadList={false}
+                  disabled={!canEditGymProfile}
+                  beforeUpload={async (file) => {
+                    try {
+                      const dataUrl = await readFileAsDataUrl(file);
+                      setLogoFile(dataUrl);
+                      setDirty("settings-page", true);
+                    } catch {
+                      message.error("Could not read file.");
+                    }
+                    return false;
+                  }}
+                >
+                  <Button icon={<UploadOutlined />} disabled={!canEditGymProfile}>
+                    Upload profile picture
+                  </Button>
+                </Upload>
+                {((logoFile === undefined ? gymLogo : logoFile) ?? null) ? (
+                  <Button
+                    danger
+                    icon={<DeleteOutlined />}
+                    disabled={!canEditGymProfile}
+                    onClick={() => {
+                      setLogoFile(null);
+                      setDirty("settings-page", true);
+                    }}
+                  >
+                    Delete picture
+                  </Button>
+                ) : null}
+              </Space>
             </Space>
           </Form.Item>
           <Form.Item label="Support phone" name="supportPhone">
             <Input placeholder="Enter support mobile number" />
-          </Form.Item>
-          <Form.Item label="Enable renewal reminders" name="renewalReminders" valuePropName="checked">
-            <Switch />
           </Form.Item>
           <Space>
             <Button type="primary" loading={saving} onClick={() => void saveGymProfile()} disabled={!canEditGymProfile}>
@@ -121,7 +134,7 @@ export default function SettingsPage() {
             <Button
               onClick={() => {
                 form.resetFields();
-                setLogoFile(null);
+                setLogoFile(undefined);
                 clearDirty("settings-page");
               }}
             >

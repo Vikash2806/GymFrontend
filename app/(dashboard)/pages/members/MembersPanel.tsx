@@ -6,10 +6,12 @@ import {
   App,
   Avatar,
   Button,
+  Checkbox,
   Col,
   DatePicker,
   Descriptions,
   Divider,
+  Dropdown,
   Form,
   Input,
   InputNumber,
@@ -38,7 +40,6 @@ import {
   PhoneOutlined,
   PlusOutlined,
   QuestionCircleOutlined,
-  ReloadOutlined,
   UploadOutlined
 } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
@@ -91,7 +92,14 @@ function formatDisplayDate(iso: string | undefined): string {
   return d.isValid() ? d.format("DD-MM-YYYY") : "—";
 }
 
-type ListResponse = { success: boolean; members?: Member[]; message?: string };
+type ListResponse = {
+  success: boolean;
+  members?: Member[];
+  total?: number;
+  page?: number;
+  pageSize?: number;
+  message?: string;
+};
 type MemberResponse = { success: boolean; member?: Member; message?: string };
 type PlansResponse = { success: boolean; plans?: MembershipPlan[]; message?: string };
 type MemberLookupResponse = {
@@ -112,6 +120,7 @@ type SubscriptionHistoryItem = {
   createdAt: string;
 };
 type SubscriptionHistoryResponse = { success: boolean; subscriptions?: SubscriptionHistoryItem[]; message?: string };
+type MemberTableColumnKey = "member" | "status" | "phone" | "age" | "plan" | "billing" | "actions";
 
 function ageFromDob(iso: string | null): string {
   if (!iso) {
@@ -212,6 +221,9 @@ export default function MembersPanel({
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [nameSearch, setNameSearch] = useState("");
   const [debouncedNameSearch, setDebouncedNameSearch] = useState("");
+  const [membersPage, setMembersPage] = useState(1);
+  const [membersPageSize, setMembersPageSize] = useState(10);
+  const [membersTotal, setMembersTotal] = useState(0);
   const effectiveBranchId = defaultBranchId;
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -228,6 +240,15 @@ export default function MembersPanel({
   const [newMembershipTarget, setNewMembershipTarget] = useState<Member | null>(null);
   const [newMembershipPlanId, setNewMembershipPlanId] = useState<string>("");
   const [newMembershipPaidAmount, setNewMembershipPaidAmount] = useState<number>(0);
+  const [visibleColumnKeys, setVisibleColumnKeys] = useState<MemberTableColumnKey[]>([
+    "member",
+    "status",
+    "phone",
+    "age",
+    "plan",
+    "billing",
+    "actions"
+  ]);
   const planRequestSeq = useRef(0);
   const [form] = Form.useForm<FormShape>();
   const watchedPhone = Form.useWatch("phone", form);
@@ -265,6 +286,8 @@ export default function MembersPanel({
   const loadMembers = useCallback(async () => {
     if (!effectiveBranchId) {
       setMembers([]);
+      setMembersTotal(0);
+      setMembersPage(1);
       onMemberCountChange?.(0);
       return;
     }
@@ -274,12 +297,20 @@ export default function MembersPanel({
       if (statusFilter !== "all") {
         params.status = statusFilter;
       }
+      params.page = String(membersPage);
+      params.pageSize = String(membersPageSize);
+      if (debouncedNameSearch) {
+        params.search = debouncedNameSearch;
+      }
       const { data } = await apiClient.get<ListResponse>("/gym/members", { params });
       if (data.success && Array.isArray(data.members)) {
         setMembers(data.members);
-        onMemberCountChange?.(data.members.length);
+        const total = typeof data.total === "number" ? data.total : data.members.length;
+        setMembersTotal(total);
+        onMemberCountChange?.(total);
       } else {
         setMembers([]);
+        setMembersTotal(0);
         onMemberCountChange?.(0);
         if (data.message) {
           message.error(data.message);
@@ -292,11 +323,12 @@ export default function MembersPanel({
           : undefined;
       message.error(msg ?? "Could not load members.");
       setMembers([]);
+      setMembersTotal(0);
       onMemberCountChange?.(0);
     } finally {
       setLoading(false);
     }
-  }, [effectiveBranchId, statusFilter, onMemberCountChange, message]);
+  }, [effectiveBranchId, statusFilter, membersPage, membersPageSize, debouncedNameSearch, onMemberCountChange, message]);
 
   const planBranchId = useMemo(() => {
     if (editing) {
@@ -336,6 +368,10 @@ export default function MembersPanel({
     }, 250);
     return () => globalThis.clearTimeout(timer);
   }, [nameSearch]);
+
+  useEffect(() => {
+    setMembersPage(1);
+  }, [effectiveBranchId, statusFilter, debouncedNameSearch]);
 
   const branchOptions = useMemo(() => {
     const br = session?.gym?.branches ?? [];
@@ -389,23 +425,6 @@ export default function MembersPanel({
     }
     void loadPlans(targetBranchId);
   }, [editing, form, effectiveBranchId, defaultBranchId, loadPlans]);
-
-  const displayedMembers = useMemo(() => {
-    if (!debouncedNameSearch) {
-      return members;
-    }
-    const digitsQuery = debouncedNameSearch.replace(/\D/g, "");
-    return members.filter((member) => {
-      const fullName = `${member.firstName} ${member.lastName}`.toLowerCase();
-      const memberPhone = member.profile.phone ?? "";
-      return (
-        fullName.includes(debouncedNameSearch) ||
-        member.firstName.toLowerCase().includes(debouncedNameSearch) ||
-        member.lastName.toLowerCase().includes(debouncedNameSearch) ||
-        (digitsQuery.length > 0 && memberPhone.includes(digitsQuery))
-      );
-    });
-  }, [members, debouncedNameSearch]);
 
   const openCreate = () => {
     setEditing(null);
@@ -499,6 +518,16 @@ export default function MembersPanel({
     setLookupNote("");
     setLookupLoading(false);
   };
+
+  const requestCloseModal = useCallback(() => {
+    if (modalDirty) {
+      confirmNavigation(() => {
+        closeModal();
+      });
+      return;
+    }
+    closeModal();
+  }, [modalDirty, confirmNavigation]);
 
   const openNewMembership = (record: Member) => {
     setEditing(null);
@@ -1024,6 +1053,28 @@ export default function MembersPanel({
       }
     ];
 
+  const visibleColumns = useMemo(
+    () =>
+      columns.filter((column) => {
+        const key = String(column.key ?? "") as MemberTableColumnKey;
+        return visibleColumnKeys.includes(key);
+      }),
+    [columns, visibleColumnKeys]
+  );
+
+  const columnOptions: Array<{ label: string; value: MemberTableColumnKey }> = useMemo(
+    () => [
+      { label: "Member", value: "member" },
+      { label: "Membership Status", value: "status" },
+      { label: "Mobile Number", value: "phone" },
+      { label: "Age", value: "age" },
+      { label: "Membership", value: "plan" },
+      { label: "Billing", value: "billing" },
+      { label: "Actions", value: "actions" }
+    ],
+    []
+  );
+
   return (
     <div>
       <div
@@ -1057,9 +1108,40 @@ export default function MembersPanel({
               { value: "inactive", label: "Inactive" }
             ]}
           />
-          <Button icon={<ReloadOutlined />} onClick={() => void loadMembers()}>
-            Refresh
-          </Button>
+          <Dropdown
+            trigger={["click"]}
+            popupRender={() => (
+              <div
+                style={{
+                  background: token.colorBgElevated,
+                  border: `1px solid ${token.colorBorderSecondary}`,
+                  borderRadius: 8,
+                  padding: 10,
+                  minWidth: 220
+                }}
+              >
+                <Checkbox.Group
+                  style={{ display: "grid", gap: 6 }}
+                  value={visibleColumnKeys}
+                  onChange={(checked) => {
+                    const next = checked.map((v) => String(v) as MemberTableColumnKey);
+                    if (next.length === 0) {
+                      return;
+                    }
+                    setVisibleColumnKeys(next);
+                  }}
+                >
+                  {columnOptions.map((option) => (
+                    <Checkbox key={option.value} value={option.value}>
+                      {option.label}
+                    </Checkbox>
+                  ))}
+                </Checkbox.Group>
+              </div>
+            )}
+          >
+            <Button>Manage Columns</Button>
+          </Dropdown>
           <ExportButton
             endpoint="/gym/exports/members"
             params={{
@@ -1079,13 +1161,19 @@ export default function MembersPanel({
       <Table<Member>
         rowKey="_id"
         loading={loading}
-        columns={columns}
-        dataSource={displayedMembers}
+        columns={visibleColumns}
+        dataSource={members}
         components={tableComponents}
         rowSelection={{ type: "checkbox" }}
         pagination={{
-          pageSize: 10,
+          current: membersPage,
+          pageSize: membersPageSize,
+          total: membersTotal,
           showSizeChanger: true,
+          onChange: (page, pageSize) => {
+            setMembersPage(page);
+            setMembersPageSize(pageSize);
+          },
           showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} members`
         }}
         scroll={{ x: 1100 }}
@@ -1129,7 +1217,6 @@ export default function MembersPanel({
                 {detailMember.profile.dob ? formatDisplayDate(detailMember.profile.dob) : "N/A"}
               </Descriptions.Item>
               <Descriptions.Item label="Age">{ageFromDob(detailMember.profile.dob)}</Descriptions.Item>
-              <Descriptions.Item label="Last Visit">N/A</Descriptions.Item>
             </Descriptions>
             <Divider orientationMargin={8} />
             <Text strong>Membership</Text>
@@ -1228,11 +1315,11 @@ export default function MembersPanel({
       <Modal
         title={editing ? "Edit member" : newMembershipTarget ? "Assign new membership" : "Add or enroll member"}
         open={modalOpen}
-        onCancel={closeModal}
+        onCancel={requestCloseModal}
         width="min(1120px, calc(100vw - 24px))"
         styles={{ body: { maxHeight: "70vh", overflowY: "auto" } }}
         footer={[
-          <Button key="cancel" onClick={closeModal}>
+          <Button key="cancel" onClick={requestCloseModal}>
             Cancel
           </Button>,
           <Button key="submit" type="primary" loading={submitting} onClick={() => void onSubmit()}>
@@ -1246,7 +1333,16 @@ export default function MembersPanel({
           </Button>
         ]}
       >
-        <Form form={form} layout="vertical" requiredMark style={{ marginTop: 8 }}>
+        <Form
+          form={form}
+          layout="vertical"
+          requiredMark
+          style={{ marginTop: 8 }}
+          onValuesChange={() => {
+            setModalDirty(true);
+            setDirty("members-modal", true);
+          }}
+        >
           <Row gutter={16}>
             <Col xs={24} sm={12}>
               <Form.Item
@@ -1270,19 +1366,7 @@ export default function MembersPanel({
             <Row gutter={16}>
               <Col xs={24} sm={12}>
                 <Form.Item
-                  name="phone"
                   label="Mobile number"
-                  rules={[
-                    { required: true, message: "Enter mobile number" },
-                    {
-                      validator: async (_, v) => {
-                        const d = stripToIndianMobileDigits(v);
-                        if (d.length !== 10) {
-                          throw new Error("Enter 10 digit mobile number");
-                        }
-                      }
-                    }
-                  ]}
                 >
                   <Space.Compact style={{ width: "100%" }}>
                     <Input
@@ -1296,11 +1380,27 @@ export default function MembersPanel({
                         color: token.colorText
                       }}
                     />
-                    <Input
-                      placeholder="Enter 10 Digit Mobile Number"
-                      maxLength={10}
-                      style={{ width: "calc(100% - 56px)" }}
-                    />
+                    <Form.Item
+                      name="phone"
+                      noStyle
+                      rules={[
+                        { required: true, message: "Enter mobile number" },
+                        {
+                          validator: async (_, v) => {
+                            const d = stripToIndianMobileDigits(v);
+                            if (d.length !== 10) {
+                              throw new Error("Enter 10 digit mobile number");
+                            }
+                          }
+                        }
+                      ]}
+                    >
+                      <Input
+                        placeholder="Enter 10 Digit Mobile Number"
+                        maxLength={10}
+                        style={{ width: "calc(100% - 56px)" }}
+                      />
+                    </Form.Item>
                   </Space.Compact>
                 </Form.Item>
               </Col>

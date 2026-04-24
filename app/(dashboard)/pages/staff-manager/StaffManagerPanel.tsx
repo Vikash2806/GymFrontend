@@ -132,6 +132,8 @@ export default function StaffManagerPanel() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [roleFilter, setRoleFilter] = useState<"all" | "manager" | "staff">("all");
+  const [searchInput, setSearchInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<StaffUserRow | null>(null);
@@ -161,6 +163,7 @@ export default function StaffManagerPanel() {
           page,
           pageSize,
           role: roleFilter,
+          search: searchQuery || undefined,
           branchId: defaultBranchId || undefined
         }
       });
@@ -175,11 +178,22 @@ export default function StaffManagerPanel() {
     } finally {
       setLoading(false);
     }
-  }, [canAccess, message, page, pageSize, roleFilter, defaultBranchId]);
+  }, [canAccess, message, page, pageSize, roleFilter, searchQuery, defaultBranchId]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    const timer = globalThis.setTimeout(() => {
+      setSearchQuery(searchInput.trim());
+    }, 250);
+    return () => globalThis.clearTimeout(timer);
+  }, [searchInput]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [roleFilter, searchQuery]);
 
   const roleSelectOptions = useMemo(() => {
     if (isOwner) {
@@ -434,6 +448,13 @@ export default function StaffManagerPanel() {
           Staff/Manager
         </Title>
         <Space wrap>
+          <Input
+            allowClear
+            placeholder="Search name, phone or email"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            style={{ width: 240 }}
+          />
           <Select
             value={roleFilter}
             onChange={(v) => {
@@ -454,6 +475,7 @@ export default function StaffManagerPanel() {
             endpoint="/gym/staff-users/export"
             params={{
               role: roleFilter,
+              search: searchQuery || undefined,
               branchId: defaultBranchId || undefined
             }}
             defaultFilename="staff-users.csv"

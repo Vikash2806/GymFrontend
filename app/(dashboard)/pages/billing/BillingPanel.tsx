@@ -17,7 +17,7 @@ import {
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { TableProps } from "antd";
-import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
+import { PlusOutlined } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
 import apiClient from "@/utils/api";
 import { formatInr } from "@/utils/formatCurrency";
@@ -337,9 +337,6 @@ export default function BillingPanel() {
             }}
             enterButton
           />
-          <Button icon={<ReloadOutlined />} onClick={() => void loadMembers()}>
-            Refresh
-          </Button>
           <ExportButton
             endpoint="/gym/exports/overdue-payments"
             params={{
