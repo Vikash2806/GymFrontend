@@ -90,6 +90,44 @@ function formatDisplayDate(iso: string | undefined): string {
   return d.isValid() ? d.format("DD-MM-YYYY") : "—";
 }
 
+function mapMemberFieldLabel(path: Array<string | number>): string {
+  const normalized = path.map((part) => String(part));
+  const root = normalized[0] ?? "";
+  if (root === "emergencyContacts") {
+    const leaf = normalized[2] ?? "";
+    if (leaf === "name") {
+      return "Emergency contact name";
+    }
+    if (leaf === "phone") {
+      return "Emergency contact phone";
+    }
+    if (leaf === "relation") {
+      return "Emergency contact relation";
+    }
+    return "Emergency contact";
+  }
+  const directMap: Record<string, string> = {
+    firstName: "First Name",
+    lastName: "Last Name",
+    phone: "Mobile number",
+    branchId: "Branch",
+    email: "Email",
+    gender: "Gender",
+    dob: "Date of Birth",
+    dateOfJoining: "Date of Joining",
+    street: "Street Address",
+    city: "City",
+    state: "State",
+    zipcode: "Zipcode",
+    country: "Country",
+    planId: "Membership plan",
+    paidAmount: "Paid amount",
+    paymentMethod: "Payment method",
+    notes: "Notes"
+  };
+  return directMap[root] ?? root;
+}
+
 type ListResponse = { success: boolean; members?: Member[]; message?: string };
 type MemberResponse = { success: boolean; member?: Member; message?: string };
 type PlansResponse = { success: boolean; plans?: MembershipPlan[]; message?: string };
@@ -347,7 +385,7 @@ export default function MembersPanel({
   const countryOptions = useMemo(() => getCountryOptions("en", "code"), []);
   const sectionTitleStyle: React.CSSProperties = { marginBottom: 12 };
   const sectionCardStyle: React.CSSProperties = {
-    backgroundColor: token.colorBgLayout,
+    backgroundColor: token.colorBgBase,
     borderRadius: 10,
     padding: 16,
     marginBottom: 16
@@ -843,6 +881,17 @@ export default function MembersPanel({
       }
     } catch (e: unknown) {
       if (e && typeof e === "object" && "errorFields" in e) {
+        const fields = (e as { errorFields?: Array<{ name?: Array<string | number> }> }).errorFields ?? [];
+        const labels = Array.from(
+          new Set(
+            fields
+              .map((field) => mapMemberFieldLabel(field.name ?? []))
+              .filter((label) => Boolean(label))
+          )
+        );
+        if (labels.length > 0) {
+          message.error(`Please enter the required field(s): ${labels.join(", ")}`);
+        }
         return;
       }
       const msg =
@@ -1066,7 +1115,7 @@ export default function MembersPanel({
                 {detailMember.profile.dob ? formatDisplayDate(detailMember.profile.dob) : "N/A"}
               </Descriptions.Item>
               <Descriptions.Item label="Age">{ageFromDob(detailMember.profile.dob)}</Descriptions.Item>
-              <Descriptions.Item label="Last Visit">N/A</Descriptions.Item>
+              {/* <Descriptions.Item label="Last Visit">N/A</Descriptions.Item> */}
             </Descriptions>
             <Divider orientationMargin={8} />
             <Text strong>Membership</Text>
@@ -1164,42 +1213,45 @@ export default function MembersPanel({
             </Row>
 
             <Row gutter={16}>
-              <Col xs={24} sm={12}>
-                <Form.Item
-                  name="phone"
-                  label="Mobile number"
-                  rules={[
-                    { required: true, message: "Enter mobile number" },
-                    {
-                      validator: async (_, v) => {
-                        const d = stripToIndianMobileDigits(v);
-                        if (d.length !== 10) {
-                          throw new Error("Enter 10 digit mobile number");
+            <Col xs={24} sm={12}>
+              <Form.Item label="Mobile number" required>
+                <Space.Compact style={{ width: "100%" }}>
+                  <Input
+                    readOnly
+                    tabIndex={-1}
+                    value="+91"
+                    style={{
+                      width: 56,
+                      textAlign: "center",
+                      background: token.colorFillAlter,
+                      color: token.colorText
+                    }}
+                  />
+                  <Form.Item
+                    name="phone"
+                    noStyle
+                    getValueFromEvent={(e) => stripToIndianMobileDigits(e.target?.value ?? e)}
+                    rules={[
+                      { required: true, message: "Enter mobile number" },
+                      {
+                        validator: async (_, v) => {
+                          const d = stripToIndianMobileDigits(v);
+                          if (d.length !== 10) {
+                            throw new Error("Enter 10 digit mobile number");
+                          }
                         }
                       }
-                    }
-                  ]}
-                >
-                  <Space.Compact style={{ width: "100%" }}>
-                    <Input
-                      readOnly
-                      tabIndex={-1}
-                      value="+91"
-                      style={{
-                        width: 56,
-                        textAlign: "center",
-                        background: token.colorFillAlter,
-                        color: token.colorText
-                      }}
-                    />
+                    ]}
+                  >
                     <Input
                       placeholder="Enter 10 Digit Mobile Number"
                       maxLength={10}
                       style={{ width: "calc(100% - 56px)" }}
                     />
-                  </Space.Compact>
-                </Form.Item>
-              </Col>
+                  </Form.Item>
+                </Space.Compact>
+              </Form.Item>
+            </Col>
               <Col xs={24} sm={12}>
                 <Form.Item
                   name="branchId"

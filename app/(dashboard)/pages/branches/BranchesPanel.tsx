@@ -149,7 +149,7 @@ export default function BranchesPanel() {
   );
   const sectionTitleStyle: React.CSSProperties = { marginBottom: 12 };
   const sectionCardStyle: React.CSSProperties = {
-    backgroundColor: token.colorBgLayout,
+    backgroundColor: token.colorBgBase,
     borderRadius: 10,
     padding: 16,
     marginBottom: 16

@@ -398,7 +398,7 @@ export default function MembershipPlansPanel({
           >
             <InputNumber min={0} step={100} style={{ width: "100%" }} placeholder="Enter price" />
           </Form.Item>
-          <Form.Item name="description" label="Description" rules={[{ required: true, message: "Enter description" }]}>
+          <Form.Item name="description" label="Description (optional)">
             <TextArea rows={3} placeholder="Enter membership description" />
           </Form.Item>
           <Form.Item name="isActive" label="Active" valuePropName="checked">

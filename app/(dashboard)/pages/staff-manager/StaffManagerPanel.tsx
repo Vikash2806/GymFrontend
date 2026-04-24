@@ -257,6 +257,7 @@ export default function StaffManagerPanel() {
         const payload: Record<string, unknown> = {
           firstName: values.firstName.trim(),
           lastName: (values.lastName ?? "").trim(),
+          mobileNumber: e164,
           role: values.role,
           branchIds: values.branchIds,
           status: values.status ?? "active"
@@ -575,7 +576,6 @@ export default function StaffManagerPanel() {
                 tabIndex={-1}
                 value="+91"
                 style={{ width: 64, textAlign: "center" }}
-                disabled={Boolean(editing)}
               />
               <Form.Item
                 name="phone"
@@ -593,7 +593,7 @@ export default function StaffManagerPanel() {
                 ]}
                 getValueFromEvent={(e) => stripToIndianMobileDigits(e.target?.value ?? e)}
               >
-                <Input placeholder="10-digit mobile" maxLength={10} disabled={Boolean(editing)} />
+                <Input placeholder="10-digit mobile" maxLength={10} />
               </Form.Item>
             </Space.Compact>
           </Form.Item>
