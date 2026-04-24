@@ -64,6 +64,9 @@ function normalizeRoleFeatures(role: "owner" | "manager" | "staff", features: Fe
   if (role === "owner") {
     return deduped;
   }
+  if (role === "manager") {
+    return deduped.filter((feature) => feature !== "user_management");
+  }
   return deduped.filter((feature) => feature !== "rbac_settings" && feature !== "user_management");
 }
 
@@ -94,7 +97,10 @@ const rbacSlice = createSlice({
       action: PayloadAction<{ role: "owner" | "manager" | "staff"; feature: FeatureKey; checked: boolean }>
     ) {
       const { role, feature, checked } = action.payload;
-      if (role !== "owner" && (feature === "rbac_settings" || feature === "user_management")) {
+      if (role === "staff" && (feature === "rbac_settings" || feature === "user_management")) {
+        return;
+      }
+      if (role === "manager" && feature === "user_management") {
         return;
       }
       if (role === "owner" && feature === "rbac_settings") {
