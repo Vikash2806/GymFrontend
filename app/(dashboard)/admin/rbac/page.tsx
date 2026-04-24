@@ -1,18 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { App, Button, Card, Checkbox, Col, Divider, Row, Space, Tabs, Tag, Typography } from "antd";
+import { App, Button, Card, Checkbox, Col, Row, Space, Tabs, Tag, Typography } from "antd";
 import apiClient from "@/utils/api";
 import RbacPermissionGuard from "@/app/components/Auth/RbacPermissionGuard";
 import { FEATURES } from "@/utils/permissions";
 import { FEATURE_MAP, type FeatureKey } from "@/constants/featureMap";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
+import { selectSession } from "@/redux/features/auth/authSlice";
 import {
   selectRbacConfig,
   setRbacConfig,
   setRoleFeatures,
   toggleRoleFeature
 } from "@/redux/features/rbacSlice";
+import { gymMembershipRoleFromSession } from "@/utils/gymRole";
 
 type PermissionsResponse = {
   success: boolean;
@@ -33,10 +35,14 @@ export default function RbacAdminPage() {
   const { message } = App.useApp();
   const dispatch = useAppDispatch();
   const config = useAppSelector(selectRbacConfig);
+  const session = useAppSelector(selectSession);
   const messageRef = useRef(message);
-  const [activeRole, setActiveRole] = useState<"manager" | "staff">("manager");
+  const [activeRole, setActiveRole] = useState<"manager" | "staff">("staff");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const ownerDefaultTabAppliedRef = useRef(false);
+  const currentUserRole = gymMembershipRoleFromSession(session);
+  const canEditManagerRole = currentUserRole === "owner";
 
   useEffect(() => {
     messageRef.current = message;
@@ -177,16 +183,31 @@ export default function RbacAdminPage() {
     void loadPermissions();
   }, [loadPermissions]);
 
+  useEffect(() => {
+    if (canEditManagerRole && currentUserRole === "owner" && !ownerDefaultTabAppliedRef.current) {
+      ownerDefaultTabAppliedRef.current = true;
+      setActiveRole("manager");
+      return;
+    }
+    if (!canEditManagerRole && activeRole === "manager") {
+      setActiveRole("staff");
+    }
+  }, [activeRole, canEditManagerRole, currentUserRole]);
+
   return (
-    <RbacPermissionGuard permission={FEATURES.RBAC_SETTINGS} requireOwner>
+    <RbacPermissionGuard permission={FEATURES.RBAC_SETTINGS}>
       <Space direction="vertical" size={16} style={{ width: "100%" }}>
         <Tabs
           activeKey={activeRole}
           onChange={(value) => setActiveRole(value as "manager" | "staff")}
-          items={[
-            { key: "manager", label: "Manager" },
-            { key: "staff", label: "Staff" }
-          ]}
+          items={
+            canEditManagerRole
+              ? [
+                  { key: "manager", label: "Manager" },
+                  { key: "staff", label: "Staff" }
+                ]
+              : [{ key: "staff", label: "Staff" }]
+          }
         />
 
         <Row justify="space-between" align="middle" wrap gutter={[12, 12]}>
@@ -211,54 +232,41 @@ export default function RbacAdminPage() {
           </Col>
         </Row>
 
+        {canEditManagerRole && activeRole === "manager" ? (
+          <Card size="small" title="Role Master Access">
+            <Row justify="space-between" align="middle" wrap={false}>
+              <Col flex="auto">
+                <Checkbox
+                  checked={config.manager.includes(FEATURES.RBAC_SETTINGS as FeatureKey)}
+                  disabled={loading || saving}
+                  onChange={(event) =>
+                    dispatch(
+                      toggleRoleFeature({
+                        role: "manager",
+                        feature: FEATURES.RBAC_SETTINGS as FeatureKey,
+                        checked: event.target.checked
+                      })
+                    )
+                  }
+                >
+                  Allow manager to access Role Master page
+                </Checkbox>
+              </Col>
+              <Col>
+                <Tag color={config.manager.includes(FEATURES.RBAC_SETTINGS as FeatureKey) ? "green" : "default"}>
+                  {config.manager.includes(FEATURES.RBAC_SETTINGS as FeatureKey) ? "Allowed" : "Blocked"}
+                </Tag>
+              </Col>
+            </Row>
+          </Card>
+        ) : null}
+
         <Row gutter={[16, 16]}>
           {standardSections.map((entry) => (
             <Col key={entry.section} xs={24} md={12} style={{ display: "flex" }}>
               {renderSection(entry.section, entry.features)}
             </Col>
           ))}
-        </Row>
-
-        <Row gutter={[32, 16]}>
-          <Col xs={24}>
-            <Card size="small" title="Admin Only" style={{ width: "100%" }}>
-              <Typography.Text type="secondary">
-                These screens are permanently restricted to admins and cannot be granted to manager/staff.
-              </Typography.Text>
-              <Divider style={{ margin: "12px 0" }} />
-              <Row gutter={[32, 16]}>
-                {FEATURE_MAP.admin_only.map((feature) => {
-                  const checked = roleFeatures.includes(feature);
-                  return (
-                    <Col key={feature} xs={24} md={12}>
-                      <Row justify="space-between" align="middle" wrap={false}>
-                        <Col flex="auto">
-                          <Checkbox
-                            checked={checked}
-                            disabled
-                            onChange={(event) =>
-                              dispatch(
-                                toggleRoleFeature({
-                                  role: activeRole,
-                                  feature,
-                                  checked: event.target.checked
-                                })
-                              )
-                            }
-                          >
-                            {toTitle(feature)}
-                          </Checkbox>
-                        </Col>
-                        <Col>
-                          <Tag color="default">Blocked</Tag>
-                        </Col>
-                      </Row>
-                    </Col>
-                  );
-                })}
-              </Row>
-            </Card>
-          </Col>
         </Row>
 
       </Space>
