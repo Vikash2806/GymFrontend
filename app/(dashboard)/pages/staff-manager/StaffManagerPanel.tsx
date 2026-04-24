@@ -29,9 +29,11 @@ import { canAccessStaffUsersModule, gymMembershipRoleFromSession } from "@/utils
 import { FEATURES, getFirstAccessibleRoute, hasFeature } from "@/utils/permissions";
 import { isValidIndianMobile, stripToIndianMobileDigits, toE164IndianMobile } from "@/utils/mobileValidation";
 import { normalizeOptionalEmail } from "@/utils/emailValidation";
+import { PASSWORD_MIN_LENGTH_MESSAGE, validateOptionalPasswordMinLength } from "@/utils/passwordValidation";
 import type { StaffUserMutationResponse, StaffUserRow, StaffUsersListResponse } from "@/types/staffUser";
 import { useRouter } from "next/navigation";
 import ExportButton from "@/app/components/Export/ExportButton";
+import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
 
 const { Title, Text } = Typography;
 
@@ -60,10 +62,25 @@ function extractApiErrorMessage(error: unknown): string | null {
   if (!(error && typeof error === "object" && "response" in error)) {
     return null;
   }
-  const payload = (error as { response?: { data?: { message?: unknown } } }).response?.data;
+  const payload = (error as { response?: { data?: { message?: unknown; errors?: unknown } } }).response?.data;
   const msg = payload?.message;
   if (typeof msg === "string" && msg.trim()) {
     return msg;
+  }
+  if (Array.isArray(payload?.errors)) {
+    const firstError = payload.errors[0];
+    if (typeof firstError === "string" && firstError.trim()) {
+      return firstError;
+    }
+    if (
+      firstError &&
+      typeof firstError === "object" &&
+      "message" in firstError &&
+      typeof (firstError as { message?: unknown }).message === "string" &&
+      (firstError as { message: string }).message.trim()
+    ) {
+      return (firstError as { message: string }).message;
+    }
   }
   return null;
 }
@@ -91,7 +108,10 @@ export default function StaffManagerPanel() {
   const gymId = session?.user?.defaults?.gymId ?? session?.gym?.id ?? "";
   const defaultBranchId = session?.activeBranch?.id ?? session?.user?.defaults?.branchId ?? "";
   const branchOptions = useMemo(() => {
-    const allBranches = session?.gym?.branches ?? [];
+    const allBranches = (session?.gym?.branches ?? []).filter((branch) => {
+      const branchStatus = (branch as { status?: string }).status;
+      return !branchStatus || branchStatus === "active";
+    });
     if (isOwner) {
       return allBranches;
     }
@@ -116,7 +136,9 @@ export default function StaffManagerPanel() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<StaffUserRow | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [modalDirty, setModalDirty] = useState(false);
   const [form] = Form.useForm<FormValues>();
+  const { setDirty, clearDirty, confirmNavigation } = useUnsavedChanges();
 
   const canAccess = canAccessStaffUsersModule(session);
   const canCreateStaff = hasFeature(session, FEATURES.STAFF_MANAGEMENT);
@@ -172,11 +194,15 @@ export default function StaffManagerPanel() {
   const openCreate = () => {
     setEditing(null);
     setModalOpen(true);
+    setModalDirty(false);
+    clearDirty("staff-manager-modal");
   };
 
   const openEdit = (record: StaffUserRow) => {
     setEditing(record);
     setModalOpen(true);
+    setModalDirty(false);
+    clearDirty("staff-manager-modal");
   };
 
   useEffect(() => {
@@ -198,6 +224,8 @@ export default function StaffManagerPanel() {
         status: editing.status,
         password: undefined
       });
+      setModalDirty(false);
+      clearDirty("staff-manager-modal");
     } else {
       form.resetFields();
       form.setFieldsValue({
@@ -209,8 +237,10 @@ export default function StaffManagerPanel() {
         email: undefined,
         password: ""
       });
+      setModalDirty(false);
+      clearDirty("staff-manager-modal");
     }
-  }, [modalOpen, editing, form, defaultBranchId, isOwner]);
+  }, [modalOpen, editing, form, defaultBranchId, isOwner, clearDirty]);
 
   const onSubmit = async () => {
     const values = await form.validateFields();
@@ -267,6 +297,8 @@ export default function StaffManagerPanel() {
       }
       setModalOpen(false);
       setEditing(null);
+      setModalDirty(false);
+      clearDirty("staff-manager-modal");
       await load();
     } catch (e: unknown) {
       if (e && typeof e === "object" && "errorFields" in e) {
@@ -466,15 +498,32 @@ export default function StaffManagerPanel() {
         title={editing ? "Edit User" : "Create User"}
         open={modalOpen}
         onCancel={() => {
-          setModalOpen(false);
-          setEditing(null);
+          const closeModal = () => {
+            setModalOpen(false);
+            setEditing(null);
+            setModalDirty(false);
+            clearDirty("staff-manager-modal");
+          };
+          if (modalDirty) {
+            confirmNavigation(closeModal);
+            return;
+          }
+          closeModal();
         }}
         onOk={() => void onSubmit()}
         confirmLoading={submitting}
         destroyOnHidden
         width={WIDE_MODAL_WIDTH}
       >
-        <Form form={form} layout="vertical" requiredMark>
+        <Form
+          form={form}
+          layout="vertical"
+          requiredMark
+          onValuesChange={() => {
+            setModalDirty(true);
+            setDirty("staff-manager-modal", true);
+          }}
+        >
           <Form.Item
             name="role"
             label="Role"
@@ -553,8 +602,11 @@ export default function StaffManagerPanel() {
             label={editing ? "Password (leave blank to keep)" : "Password"}
             rules={
               editing
-                ? []
-                : [{ required: true, message: "Password is required" }, { min: 6, message: "At least 6 characters" }]
+                ? [{ validator: validateOptionalPasswordMinLength }]
+                : [
+                    { required: true, message: "Password is required" },
+                    { validator: validateOptionalPasswordMinLength, message: PASSWORD_MIN_LENGTH_MESSAGE }
+                  ]
             }
           >
             <Input.Password autoComplete="new-password" />

@@ -111,6 +111,11 @@ export default function SignUpCard() {
 
     if (signupAsync.rejected.match(result) && result.payload) {
       gymForm.setFields([{ name: "gymName", errors: [String(result.payload)] }]);
+      return;
+    }
+
+    if (signupAsync.fulfilled.match(result)) {
+      router.replace("/login");
     }
   };
 

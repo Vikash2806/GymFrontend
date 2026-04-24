@@ -24,6 +24,7 @@ import { WIDE_MODAL_WIDTH } from "@/utils/modalWidths";
 import type { MembershipPlan, MembershipPlanInput } from "@/types/membership";
 import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
+import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
 
 const { TextArea } = Input;
 const { Title } = Typography;
@@ -41,7 +42,15 @@ const tableComponents: TableProps<MembershipPlan>["components"] = {
 type ListResponse = { success: boolean; plans?: MembershipPlan[]; message?: string };
 type PlanResponse = { success: boolean; plan?: MembershipPlan; message?: string };
 
-export default function MembershipPlansPanel() {
+export type MembershipPlansPanelProps = {
+  createRequestId?: number;
+  onPlanCreatedFromExternalRequest?: (plan: { _id: string; name: string }) => void;
+};
+
+export default function MembershipPlansPanel({
+  createRequestId = 0,
+  onPlanCreatedFromExternalRequest
+}: MembershipPlansPanelProps) {
   const { message } = App.useApp();
   const { token } = theme.useToken();
   const session = useAppSelector(selectSession);
@@ -52,7 +61,9 @@ export default function MembershipPlansPanel() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<MembershipPlan | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [pendingExternalCreate, setPendingExternalCreate] = useState(false);
   const [form] = Form.useForm<MembershipPlanInput>();
+  const { setDirty, clearDirty, confirmNavigation } = useUnsavedChanges();
 
   const loadPlans = useCallback(async () => {
     if (!branchId) {
@@ -88,6 +99,15 @@ export default function MembershipPlansPanel() {
     void loadPlans();
   }, [loadPlans]);
 
+  useEffect(() => {
+    if (!createRequestId) {
+      return;
+    }
+    setPendingExternalCreate(true);
+    openCreate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createRequestId]);
+
   const openCreate = () => {
     if (!branchId) {
       message.warning("Select a branch in the header first.");
@@ -105,6 +125,7 @@ export default function MembershipPlansPanel() {
       isActive: true
     });
     setModalOpen(true);
+    clearDirty("membership-plan-modal");
   };
 
   const openEdit = (record: MembershipPlan) => {
@@ -119,12 +140,21 @@ export default function MembershipPlansPanel() {
       isActive: record.isActive
     });
     setModalOpen(true);
+    clearDirty("membership-plan-modal");
   };
 
   const closeModal = () => {
-    setModalOpen(false);
-    setEditing(null);
-    form.resetFields();
+    const close = () => {
+      setModalOpen(false);
+      setEditing(null);
+      form.resetFields();
+      clearDirty("membership-plan-modal");
+    };
+    if (form.isFieldsTouched(true)) {
+      confirmNavigation(close);
+      return;
+    }
+    close();
   };
 
   const onSubmit = async () => {
@@ -162,6 +192,9 @@ export default function MembershipPlansPanel() {
         const { data } = await apiClient.post<PlanResponse>("/gym/membership-plans", payload);
         if (data.success) {
           message.success("Membership created.");
+          if (pendingExternalCreate && data.plan?._id && data.plan.name) {
+            onPlanCreatedFromExternalRequest?.({ _id: data.plan._id, name: data.plan.name });
+          }
           closeModal();
           await loadPlans();
         } else {
@@ -178,6 +211,9 @@ export default function MembershipPlansPanel() {
           : undefined;
       message.error(msg ?? "Request failed.");
     } finally {
+      if (!editing) {
+        setPendingExternalCreate(false);
+      }
       setSubmitting(false);
     }
   };
@@ -322,7 +358,15 @@ export default function MembershipPlansPanel() {
           </Button>
         ]}
       >
-        <Form form={form} layout="vertical" requiredMark style={{ marginTop: 8 }}>
+        <Form
+          form={form}
+          layout="vertical"
+          requiredMark
+          style={{ marginTop: 8 }}
+          onValuesChange={() => {
+            setDirty("membership-plan-modal", true);
+          }}
+        >
           <Form.Item name="branchId" hidden>
             <Input />
           </Form.Item>

@@ -342,10 +342,10 @@ const authSlice = createSlice({
       })
       .addCase(signupAsync.fulfilled, (state, action) => {
         state.loading = false;
-        state.isLoggedIn = true;
-        state.userData = action.payload;
+        state.isLoggedIn = false;
+        state.userData = null;
         if (typeof window !== "undefined") {
-          localStorage.setItem("userData", JSON.stringify(action.payload));
+          localStorage.removeItem("userData");
         }
       })
       .addCase(signupAsync.rejected, (state, action) => {

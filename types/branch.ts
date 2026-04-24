@@ -17,11 +17,11 @@ export type BranchRow = {
   timezone: string;
   status: "active" | "inactive";
   memberCount: number;
-  manager: {
+  managers: Array<{
     id: string;
     fullName: string;
     status: "active" | "inactive";
-  } | null;
+  }>;
 };
 
 export type BranchesListResponse = {

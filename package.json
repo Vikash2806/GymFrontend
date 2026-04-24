@@ -5,6 +5,7 @@
   "scripts": {
     "clean:next": "node -e \"const fs=require('fs'); fs.rmSync('.next',{recursive:true,force:true});\"",
     "dev": "node --max-old-space-size=8192 node_modules/next/dist/bin/next dev --turbopack",
+    "dev:clean": "npm run clean:next && npm run dev",
     "build": "node --max-old-space-size=8192 node_modules/next/dist/bin/next build",
     "start": "next start",
     "lint": "next lint",

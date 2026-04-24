@@ -90,6 +90,7 @@ export default function SignInCard() {
               name="mobileNumber"
               noStyle
               normalize={stripToIndianMobileDigits}
+              validateTrigger="onSubmit"
               rules={[
                 { required: true, message: "Enter your mobile number." },
                 {

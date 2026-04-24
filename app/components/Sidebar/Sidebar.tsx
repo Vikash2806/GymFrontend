@@ -15,12 +15,11 @@ import {
   WalletOutlined
 } from "@ant-design/icons";
 import { usePathname, useRouter } from "next/navigation";
-import Link from "next/link";
-import { startTransition } from "react";
 import type { MenuProps } from "antd";
 import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
 import { FEATURES, hasFeature } from "@/utils/permissions";
+import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
 
 const { Sider } = Layout;
 
@@ -78,13 +77,7 @@ const toMenuData = (items: MenuItem[]): NonNullable<MenuProps["items"]> =>
       : {
           key: item.key,
           icon: item.icon,
-          label: item.route ? (
-            <Link href={item.route} prefetch style={{ display: "block", width: "100%" }}>
-              {item.label}
-            </Link>
-          ) : (
-            item.label
-          )
+          label: item.label
         }
   );
 
@@ -92,6 +85,7 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
   const pathname = usePathname();
   const router = useRouter();
   const { token } = theme.useToken();
+  const { confirmNavigation } = useUnsavedChanges();
   const session = useAppSelector(selectSession);
 
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
@@ -150,9 +144,7 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
     if (!targetRoute || pathname === targetRoute) {
       return;
     }
-    startTransition(() => {
-      router.push(targetRoute);
-    });
+    confirmNavigation(() => router.push(targetRoute));
   };
 
   const toggleCollapse = () => {

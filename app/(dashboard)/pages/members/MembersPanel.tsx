@@ -51,10 +51,14 @@ import { selectSession } from "@/redux/features/auth/authSlice";
 import { stripToIndianMobileDigits } from "@/utils/mobileValidation";
 import { formatInrWhole } from "@/utils/formatCurrency";
 import { FEATURES, hasFeature } from "@/utils/permissions";
+import { getCityOptions, getCountryOptions, getStateOptions } from "@/utils/options";
 import ExportButton from "@/app/components/Export/ExportButton";
+import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
 
 const { Title, Text } = Typography;
-const DEFAULT_STATE = "Tamil Nadu";
+const DEFAULT_COUNTRY_CODE = "IN";
+const DEFAULT_STATE_CODE = "TN";
+const DEFAULT_CITY_CODE = "TN_TNJ";
 
 const TABLE_HEADER_STYLE: React.CSSProperties = { fontSize: 15, fontWeight: 600 };
 
@@ -65,6 +69,19 @@ const tableComponents: TableProps<Member>["components"] = {
     )
   }
 };
+
+function toOptionValue(options: Array<{ value: string; label: string }>, rawValue: string | undefined, fallback: string): string {
+  const normalized = String(rawValue ?? "").trim();
+  if (!normalized) {
+    return fallback;
+  }
+  const direct = options.find((option) => option.value === normalized);
+  if (direct) {
+    return direct.value;
+  }
+  const byLabel = options.find((option) => option.label.toLowerCase() === normalized.toLowerCase());
+  return byLabel?.value ?? fallback;
+}
 
 function formatDisplayDate(iso: string | undefined): string {
   if (!iso) {
@@ -164,11 +181,19 @@ type FormShape = {
   notes?: string;
 };
 
-type MembersPanelProps = {
+export type MembersPanelProps = {
   onMemberCountChange?: (count: number) => void;
+  onRequestCreateMembershipPlan?: () => void;
+  createdPlanFromMemberships?: { _id: string; name: string } | null;
+  onCreatedPlanHandled?: () => void;
 };
 
-export default function MembersPanel({ onMemberCountChange }: MembersPanelProps) {
+export default function MembersPanel({
+  onMemberCountChange,
+  onRequestCreateMembershipPlan,
+  createdPlanFromMemberships,
+  onCreatedPlanHandled
+}: MembersPanelProps) {
   const { message } = App.useApp();
   const { token } = theme.useToken();
   const session = useAppSelector(selectSession);
@@ -196,6 +221,7 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
   const [editing, setEditing] = useState<Member | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [avatarList, setAvatarList] = useState<UploadFile[]>([]);
+  const [modalDirty, setModalDirty] = useState(false);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupMember, setLookupMember] = useState<Member | null>(null);
   const [lookupNote, setLookupNote] = useState<string>("");
@@ -206,6 +232,9 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
   const [form] = Form.useForm<FormShape>();
   const watchedPhone = Form.useWatch("phone", form);
   const watchedBranchId = Form.useWatch("branchId", form);
+  const watchedCountry = Form.useWatch("country", form);
+  const watchedState = Form.useWatch("state", form);
+  const { setDirty, clearDirty, confirmNavigation } = useUnsavedChanges();
 
   const loadPlans = useCallback(async (branchId: string) => {
     if (!branchId) {
@@ -310,7 +339,13 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
 
   const branchOptions = useMemo(() => {
     const br = session?.gym?.branches ?? [];
-    const visibleBranches = canManageBranches ? br : br.filter((branch) => branch.id === defaultBranchId);
+    const activeBranches = br.filter((branch) => {
+      const branchStatus = (branch as { status?: string }).status;
+      return !branchStatus || branchStatus === "active";
+    });
+    const visibleBranches = canManageBranches
+      ? activeBranches
+      : activeBranches.filter((branch) => branch.id === defaultBranchId);
     return visibleBranches.map((b) => ({ value: b.id, label: `${b.name} (${b.code})` }));
   }, [session?.gym?.branches, canManageBranches, defaultBranchId]);
 
@@ -321,6 +356,25 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
         label: `${p.name} — ₹${p.price.toLocaleString("en-IN")} / ${p.duration}d`
       })),
     [plans]
+  );
+
+  const countryOptions = useMemo(() => getCountryOptions("en", "code"), []);
+  const sectionTitleStyle: React.CSSProperties = { marginBottom: 12 };
+  const sectionCardStyle: React.CSSProperties = {
+    backgroundColor: token.colorBgLayout,
+    borderRadius: 10,
+    padding: 16,
+    marginBottom: 16
+  };
+  const selectedCountryCode = (watchedCountry as string | undefined) ?? DEFAULT_COUNTRY_CODE;
+  const stateOptions = useMemo(
+    () => getStateOptions("en", selectedCountryCode, "code"),
+    [selectedCountryCode]
+  );
+  const selectedStateCode = (watchedState as string | undefined) ?? DEFAULT_STATE_CODE;
+  const cityOptions = useMemo(
+    () => getCityOptions("en", selectedStateCode, selectedCountryCode, "code"),
+    [selectedStateCode, selectedCountryCode]
   );
 
   const reloadPlansForOpenDropdown = useCallback(() => {
@@ -366,13 +420,21 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
       branchId: effectiveBranchId || defaultBranchId,
       gender: "male",
       dateOfJoining: dayjs(),
-      state: DEFAULT_STATE,
-      country: "India",
+      state: DEFAULT_STATE_CODE,
+      city: DEFAULT_CITY_CODE,
+      country: DEFAULT_COUNTRY_CODE,
       paidAmount: 0,
       paymentMethod: "cash" as const,
       emergencyContacts: []
     });
+    setModalDirty(false);
+    clearDirty("members-modal");
     setModalOpen(true);
+  };
+
+  const startCreateMembershipFromMemberModal = () => {
+    setModalOpen(false);
+    onRequestCreateMembershipPlan?.();
   };
 
   const openEdit = async (record: Member) => {
@@ -402,15 +464,17 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
         gender: m.profile.gender,
         dob: m.profile.dob ? dayjs(m.profile.dob) : undefined,
         street: m.address.street,
-        city: m.address.city,
-        state: m.address.state || DEFAULT_STATE,
+        city: toOptionValue(cityOptions, m.address.city, DEFAULT_CITY_CODE),
+        state: toOptionValue(stateOptions, m.address.state, DEFAULT_STATE_CODE),
         zipcode: m.address.zipcode,
-        country: m.address.country || "India",
+        country: toOptionValue(countryOptions, m.address.country, DEFAULT_COUNTRY_CODE),
         emergencyContacts: m.emergencyContacts?.length
           ? m.emergencyContacts
           : [{ name: "", phone: "", relation: "" }],
         notes: m.notes
       });
+      setModalDirty(false);
+      clearDirty("members-modal");
       if (m.profile.profilePicture) {
         setAvatarList([{ uid: "-1", name: "photo", status: "done", url: m.profile.profilePicture }]);
       }
@@ -429,9 +493,6 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
   const closeModal = () => {
     setModalOpen(false);
     setEditing(null);
-    setNewMembershipTarget(null);
-    setNewMembershipPlanId("");
-    setNewMembershipPaidAmount(0);
     form.resetFields();
     setAvatarList([]);
     setLookupMember(null);
@@ -442,33 +503,14 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
   const openNewMembership = (record: Member) => {
     setEditing(null);
     setNewMembershipTarget(record);
+    setNewMembershipPlanId("");
+    setNewMembershipPaidAmount(0);
     setAvatarList([]);
     setLookupLoading(false);
     setLookupMember(record);
     setLookupNote(`Assigning new membership for ${record.firstName} ${record.lastName}.`);
-    setNewMembershipPlanId("");
-    setNewMembershipPaidAmount(0);
     void loadPlans(record.branchId);
     form.resetFields();
-    form.setFieldsValue({
-      branchId: record.branchId,
-      firstName: record.firstName,
-      lastName: record.lastName,
-      email: record.email ?? undefined,
-      phone: record.profile.phone,
-      gender: record.profile.gender,
-      dob: record.profile.dob ? dayjs(record.profile.dob) : undefined,
-      dateOfJoining: dayjs(),
-      street: record.address.street,
-      city: record.address.city,
-      state: record.address.state || DEFAULT_STATE,
-      zipcode: record.address.zipcode,
-      country: record.address.country || "India",
-      paidAmount: 0,
-      paymentMethod: "cash" as const,
-      emergencyContacts: record.emergencyContacts ?? [],
-      notes: record.notes
-    });
     setModalOpen(true);
   };
 
@@ -604,6 +646,8 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
     reader.onload = () => {
       const result = typeof reader.result === "string" ? reader.result : "";
       setAvatarList([{ uid: String(Date.now()), name: file.name, status: "done", url: result }]);
+      setModalDirty(true);
+      setDirty("members-modal", true);
     };
     reader.readAsDataURL(file);
     return false;
@@ -667,7 +711,7 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
             city: (values.city ?? "").trim(),
             state: (values.state ?? "").trim(),
             zipcode: (values.zipcode ?? "").trim(),
-            country: (values.country ?? "").trim() || "India"
+            country: (values.country ?? "").trim() || DEFAULT_COUNTRY_CODE
           },
           emergencyContacts: (values.emergencyContacts ?? [])
             .map((c) => ({
@@ -683,7 +727,10 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
         const { data } = await apiClient.patch<MemberResponse>(`/gym/members/${editing._id}`, payload);
         if (data.success) {
           message.success("Member updated.");
-          closeModal();
+          setModalOpen(false);
+          setEditing(null);
+          setModalDirty(false);
+          clearDirty("members-modal");
           await loadMembers();
         } else {
           message.error(data.message ?? "Update failed.");
@@ -747,7 +794,7 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
           city: (values.city ?? "").trim(),
           state: (values.state ?? "").trim(),
           zipcode: (values.zipcode ?? "").trim(),
-          country: (values.country ?? "").trim() || "India"
+          country: (values.country ?? "").trim() || DEFAULT_COUNTRY_CODE
         },
         emergencyContacts: ec,
         notes: (values.notes ?? "").trim(),
@@ -776,7 +823,7 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
             city: (values.city ?? "").trim(),
             state: (values.state ?? "").trim(),
             zipcode: (values.zipcode ?? "").trim(),
-            country: (values.country ?? "").trim() || "India"
+            country: (values.country ?? "").trim() || DEFAULT_COUNTRY_CODE
           },
           emergencyContacts: ec,
           notes: (values.notes ?? "").trim(),
@@ -804,7 +851,10 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
         );
         if (subRes.data.success) {
           message.success("Existing member enrolled with a new subscription.");
-          closeModal();
+          setModalOpen(false);
+          setEditing(null);
+          setModalDirty(false);
+          clearDirty("members-modal");
           await loadMembers();
         } else {
           message.error(subRes.data.message ?? "Could not add subscription for existing member.");
@@ -815,7 +865,10 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
       const { data } = await apiClient.post<MemberResponse>("/gym/members", createPayload);
       if (data.success) {
         message.success("Member created.");
-        closeModal();
+        setModalOpen(false);
+        setEditing(null);
+        setModalDirty(false);
+        clearDirty("members-modal");
         await loadMembers();
       } else {
         message.error(data.message ?? "Create failed.");
@@ -1193,52 +1246,7 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
           </Button>
         ]}
       >
-        {newMembershipTarget ? (
-          <Form layout="vertical" requiredMark style={{ marginTop: 8 }}>
-            <Row gutter={16}>
-              <Col xs={24} sm={8}>
-                <Form.Item label="First Name">
-                  <Input value={newMembershipTarget.firstName} readOnly />
-                </Form.Item>
-              </Col>
-              <Col xs={24} sm={8}>
-                <Form.Item label="Last Name">
-                  <Input value={newMembershipTarget.lastName} readOnly />
-                </Form.Item>
-              </Col>
-              <Col xs={24} sm={8}>
-                <Form.Item label="Mobile Number">
-                  <Input value={`+91${newMembershipTarget.profile.phone}`} readOnly />
-                </Form.Item>
-              </Col>
-            </Row>
-            <Form.Item label="New Membership" required>
-              <Select
-                showSearch
-                optionFilterProp="label"
-                placeholder={planOptions.length ? "Select membership plan" : "No active plans found"}
-                value={newMembershipPlanId || undefined}
-                onChange={(v) => setNewMembershipPlanId(String(v))}
-                options={planOptions}
-                notFoundContent={
-                  planOptions.length ? undefined : (
-                    <Text type="secondary">Create a plan under the Memberships tab.</Text>
-                  )
-                }
-              />
-            </Form.Item>
-            <Form.Item label="Paid Amount">
-              <InputNumber
-                min={0}
-                step={100}
-                style={{ width: "100%" }}
-                value={newMembershipPaidAmount}
-                onChange={(value) => setNewMembershipPaidAmount(typeof value === "number" ? value : 0)}
-              />
-            </Form.Item>
-          </Form>
-        ) : (
-          <Form form={form} layout="vertical" requiredMark style={{ marginTop: 8 }}>
+        <Form form={form} layout="vertical" requiredMark style={{ marginTop: 8 }}>
           <Row gutter={16}>
             <Col xs={24} sm={12}>
               <Form.Item
@@ -1259,59 +1267,59 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
             </Col>
           </Row>
 
-          <Row gutter={16}>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="phone"
-                label="Mobile number"
-                rules={[
-                  { required: true, message: "Enter mobile number" },
-                  {
-                    validator: async (_, v) => {
-                      const d = stripToIndianMobileDigits(v);
-                      if (d.length !== 10) {
-                        throw new Error("Enter 10 digit mobile number");
+            <Row gutter={16}>
+              <Col xs={24} sm={12}>
+                <Form.Item
+                  name="phone"
+                  label="Mobile number"
+                  rules={[
+                    { required: true, message: "Enter mobile number" },
+                    {
+                      validator: async (_, v) => {
+                        const d = stripToIndianMobileDigits(v);
+                        if (d.length !== 10) {
+                          throw new Error("Enter 10 digit mobile number");
+                        }
                       }
                     }
-                  }
-                ]}
-              >
-                <Space.Compact style={{ width: "100%" }}>
-                  <Input
-                    readOnly
-                    tabIndex={-1}
-                    value="+91"
-                    style={{
-                      width: 56,
-                      textAlign: "center",
-                      background: token.colorFillAlter,
-                      color: token.colorText
-                    }}
+                  ]}
+                >
+                  <Space.Compact style={{ width: "100%" }}>
+                    <Input
+                      readOnly
+                      tabIndex={-1}
+                      value="+91"
+                      style={{
+                        width: 56,
+                        textAlign: "center",
+                        background: token.colorFillAlter,
+                        color: token.colorText
+                      }}
+                    />
+                    <Input
+                      placeholder="Enter 10 Digit Mobile Number"
+                      maxLength={10}
+                      style={{ width: "calc(100% - 56px)" }}
+                    />
+                  </Space.Compact>
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={12}>
+                <Form.Item
+                  name="branchId"
+                  label="Branch"
+                  rules={[{ required: true, message: "Select branch" }]}
+                >
+                  <Select
+                    showSearch
+                    optionFilterProp="label"
+                    placeholder="Select branch"
+                    options={branchOptions}
+                    disabled={Boolean(editing) || !canManageBranches}
                   />
-                  <Input
-                    placeholder="Enter 10 Digit Mobile Number"
-                    maxLength={10}
-                    style={{ width: "calc(100% - 56px)" }}
-                  />
-                </Space.Compact>
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="branchId"
-                label="Branch"
-                rules={[{ required: true, message: "Select branch" }]}
-              >
-                <Select
-                  showSearch
-                  optionFilterProp="label"
-                  placeholder="Select branch"
-                  options={branchOptions}
-                  disabled={Boolean(editing) || !canManageBranches}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
+                </Form.Item>
+              </Col>
+            </Row>
           {!editing && lookupLoading ? (
             <Alert type="info" message="Checking existing member by mobile..." showIcon style={{ marginBottom: 16 }} />
           ) : null}
@@ -1324,7 +1332,7 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
             />
           ) : null}
 
-          <Form.Item
+          {/* <Form.Item
             label={
               <span>
                 Profile photo{" "}
@@ -1337,7 +1345,11 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
               maxCount={1}
               fileList={avatarList}
               beforeUpload={beforeUploadAvatar}
-              onRemove={() => setAvatarList([])}
+              onRemove={() => {
+                setAvatarList([]);
+                setModalDirty(true);
+                setDirty("members-modal", true);
+              }}
             >
               {avatarList.length === 0 && (
                 <div>
@@ -1346,200 +1358,224 @@ export default function MembersPanel({ onMemberCountChange }: MembersPanelProps)
                 </div>
               )}
             </Upload>
-          </Form.Item>
+          </Form.Item> */}
 
-          <Form.Item
-            name="email"
-            label="Email"
-            rules={[
-              {
-                type: "email",
-                message: "Invalid email"
-              }
-            ]}
-          >
-            <Input placeholder="user@gmail.com" allowClear />
-          </Form.Item>
-
-          <Divider plain>Personal details</Divider>
-
-          <Row gutter={16}>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="gender"
-                label="Gender"
-                rules={[{ required: true, message: "Select gender" }]}
-              >
-                <Select
-                  options={[
-                    { value: "male", label: "Male" },
-                    { value: "female", label: "Female" },
-                    { value: "other", label: "Other" }
-                  ]}
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item name="dob" label="Date of Birth">
-                <DatePicker style={{ width: "100%" }} format="DD-MM-YYYY" placeholder="Select date of birth" />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          {!editing && (
+          <Title level={5} style={sectionTitleStyle}>Personal details</Title>
+          <div style={sectionCardStyle}>
             <Form.Item
-              name="dateOfJoining"
-              label="Date of Joining"
-              rules={[{ required: true, message: "Select date of joining" }]}
+              name="email"
+              label="Email"
+              rules={[
+                {
+                  type: "email",
+                  message: "Invalid email"
+                }
+              ]}
             >
-              <DatePicker style={{ width: "100%" }} format="DD-MM-YYYY" />
+              <Input placeholder="user@gmail.com" allowClear />
             </Form.Item>
-          )}
 
-          <Divider plain>Address</Divider>
+            <Row gutter={16}>
+              <Col xs={24} sm={12}>
+                <Form.Item
+                  name="gender"
+                  label="Gender"
+                  rules={[{ required: true, message: "Select gender" }]}
+                >
+                  <Select
+                    options={[
+                      { value: "male", label: "Male" },
+                      { value: "female", label: "Female" },
+                      { value: "other", label: "Other" }
+                    ]}
+                  />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={12}>
+                <Form.Item name="dob" label="Date of Birth">
+                  <DatePicker style={{ width: "100%" }} format="DD-MM-YYYY" placeholder="Select date of birth" />
+                </Form.Item>
+              </Col>
+            </Row>
 
-          <Form.Item name="street" label="Street Address">
-            <Input prefix={<HomeOutlined />} placeholder="Enter street address" allowClear />
-          </Form.Item>
+            {!editing && (
+              <Form.Item
+                name="dateOfJoining"
+                label="Date of Joining"
+                rules={[{ required: true, message: "Select date of joining" }]}
+              >
+                <DatePicker style={{ width: "100%" }} format="DD-MM-YYYY" />
+              </Form.Item>
+            )}
+          </div>
 
-          <Row gutter={16}>
-            <Col xs={24} sm={12}>
-              <Form.Item name="city" label="City">
-                <Input placeholder="City" allowClear />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item name="state" label="State">
-                <Input placeholder="State" allowClear />
-              </Form.Item>
-            </Col>
-          </Row>
+          <Title level={5} style={sectionTitleStyle}>Address</Title>
+          <div style={sectionCardStyle}>
+            <Form.Item name="street" label="Street Address">
+              <Input prefix={<HomeOutlined />} placeholder="Enter street address" allowClear />
+            </Form.Item>
 
-          <Row gutter={16}>
-            <Col xs={24} sm={12}>
-              <Form.Item name="zipcode" label="Zipcode">
-                <Input placeholder="Enter zipcode" allowClear />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item name="country" label="Country">
-                <Input placeholder="Country" allowClear />
-              </Form.Item>
-            </Col>
-          </Row>
+            <Row gutter={16}>
+              <Col xs={24} sm={12}>
+                <Form.Item name="city" label="City">
+                  <Select
+                    showSearch
+                    optionFilterProp="label"
+                    placeholder="Select city"
+                    options={cityOptions}
+                    allowClear
+                  />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={12}>
+                <Form.Item name="state" label="State">
+                  <Select
+                    showSearch
+                    optionFilterProp="label"
+                    placeholder="Select state"
+                    options={stateOptions}
+                    allowClear
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+
+            <Row gutter={16}>
+              <Col xs={24} sm={12}>
+                <Form.Item name="zipcode" label="Zipcode">
+                  <Input placeholder="Enter zipcode" allowClear />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={12}>
+                <Form.Item name="country" label="Country">
+                  <Select
+                    showSearch
+                    optionFilterProp="label"
+                    placeholder="Select country"
+                    options={countryOptions}
+                    allowClear
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+          </div>
 
           {!editing && (
             <>
-              <Divider plain>Plan &amp; payment</Divider>
-              <Row gutter={16}>
-                <Col xs={24} sm={12}>
-                  <Form.Item
-                    name="planId"
-                    label="Membership plan"
-                    rules={[{ required: true, message: "Select a plan" }]}
-                  >
-                    <Select
-                      showSearch
-                      optionFilterProp="label"
-                      placeholder={planOptions.length ? "Select plan" : "No active plans found"}
-                      options={planOptions}
-                      onOpenChange={(open) => {
-                        if (open) {
-                          reloadPlansForOpenDropdown();
+              <Title level={5} style={sectionTitleStyle}>Plan &amp; payment</Title>
+              <div style={sectionCardStyle}>
+                <Row gutter={16}>
+                  <Col xs={24} sm={12}>
+                    <Form.Item
+                      name="planId"
+                      label="Membership plan"
+                      rules={[{ required: true, message: "Select a plan" }]}
+                    >
+                      <Select
+                        showSearch
+                        optionFilterProp="label"
+                        placeholder={planOptions.length ? "Select plan" : "No active plans found"}
+                        options={planOptions}
+                        onOpenChange={(open) => {
+                          if (open) {
+                            reloadPlansForOpenDropdown();
+                          }
+                        }}
+                        notFoundContent={
+                          planOptions.length ? undefined : (
+                            <Button type="link" onClick={startCreateMembershipFromMemberModal} style={{ padding: 0 }}>
+                              Add membership plan
+                            </Button>
+                          )
                         }
-                      }}
-                      notFoundContent={
-                        planOptions.length ? undefined : (
-                          <Text type="secondary">Create a plan under the Memberships tab.</Text>
-                        )
-                      }
-                    />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} sm={12}>
-                  <Form.Item name="paidAmount" label="Paid amount">
-                    <InputNumber min={0} step={100} style={{ width: "100%" }} />
-                  </Form.Item>
-                </Col>
-              </Row>
-              <Form.Item name="paymentMethod" label="Payment method">
-                <Select
-                  options={[
-                    { value: "cash", label: "Cash" },
-                    { value: "upi", label: "UPI" },
-                    { value: "card", label: "Card" }
-                  ]}
-                />
-              </Form.Item>
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={24} sm={12}>
+                    <Form.Item name="paidAmount" label="Paid amount">
+                      <InputNumber min={0} step={100} style={{ width: "100%" }} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Form.Item name="paymentMethod" label="Payment method">
+                  <Select
+                    options={[
+                      { value: "cash", label: "Cash" },
+                      { value: "upi", label: "UPI" },
+                      { value: "card", label: "Card" }
+                    ]}
+                  />
+                </Form.Item>
+              </div>
             </>
           )}
 
-          <Divider plain>Emergency contacts</Divider>
-
-          <Form.List name="emergencyContacts">
-            {(fields, { add, remove }) => (
-              <div>
-                {fields.map(({ key, name, ...restField }) => (
-                  <Row gutter={8} key={key} style={{ marginBottom: 8 }} wrap={false}>
-                    <Col flex="1 1 120px">
-                      <Form.Item
-                        {...restField}
-                        name={[name, "name"]}
-                        rules={[{ required: true, message: "Name" }]}
-                        style={{ marginBottom: 0 }}
-                      >
-                        <Input placeholder="Name" />
-                      </Form.Item>
-                    </Col>
-                    <Col flex="1 1 120px">
-                      <Form.Item
-                        {...restField}
-                        name={[name, "phone"]}
-                        rules={[
-                          { required: true, message: "Phone" },
-                          {
-                            validator: async (_, v) => {
-                              const d = stripToIndianMobileDigits(v);
-                              if (d.length !== 10) {
-                                throw new Error("10 digits");
+          <Title level={5} style={sectionTitleStyle}>Emergency contacts</Title>
+          <div style={sectionCardStyle}>
+            <Form.List name="emergencyContacts">
+              {(fields, { add, remove }) => (
+                <div>
+                  {fields.map(({ key, name, ...restField }) => (
+                    <Row gutter={8} key={key} style={{ marginBottom: 8 }} wrap={false}>
+                      <Col flex="1 1 120px">
+                        <Form.Item
+                          {...restField}
+                          name={[name, "name"]}
+                          rules={[{ required: true, message: "Name" }]}
+                          style={{ marginBottom: 0 }}
+                        >
+                          <Input placeholder="Name" />
+                        </Form.Item>
+                      </Col>
+                      <Col flex="1 1 120px">
+                        <Form.Item
+                          {...restField}
+                          name={[name, "phone"]}
+                          rules={[
+                            { required: true, message: "Phone" },
+                            {
+                              validator: async (_, v) => {
+                                const d = stripToIndianMobileDigits(v);
+                                if (d.length !== 10) {
+                                  throw new Error("10 digits");
+                                }
                               }
                             }
-                          }
-                        ]}
-                        style={{ marginBottom: 0 }}
-                      >
-                        <Input placeholder="Phone" />
-                      </Form.Item>
-                    </Col>
-                    <Col flex="1 1 100px">
-                      <Form.Item
-                        {...restField}
-                        name={[name, "relation"]}
-                        rules={[{ required: true, message: "Relation" }]}
-                        style={{ marginBottom: 0 }}
-                      >
-                        <Input placeholder="Relation" />
-                      </Form.Item>
-                    </Col>
-                    <Col flex="none">
-                      <Button type="text" danger onClick={() => remove(name)}>
-                        Remove
-                      </Button>
-                    </Col>
-                  </Row>
-                ))}
-                <Button type="dashed" block icon={<PlusOutlined />} onClick={() => add({ name: "", phone: "", relation: "" })}>
-                  Add Contact
-                </Button>
-              </div>
-            )}
-          </Form.List>
+                          ]}
+                          style={{ marginBottom: 0 }}
+                        >
+                          <Input placeholder="Phone" />
+                        </Form.Item>
+                      </Col>
+                      <Col flex="1 1 100px">
+                        <Form.Item
+                          {...restField}
+                          name={[name, "relation"]}
+                          rules={[{ required: true, message: "Relation" }]}
+                          style={{ marginBottom: 0 }}
+                        >
+                          <Input placeholder="Relation" />
+                        </Form.Item>
+                      </Col>
+                      <Col flex="none">
+                        <Button type="text" danger onClick={() => remove(name)}>
+                          Remove
+                        </Button>
+                      </Col>
+                    </Row>
+                  ))}
+                  <Button type="dashed" block icon={<PlusOutlined />} onClick={() => add({ name: "", phone: "", relation: "" })}>
+                    Add Contact
+                  </Button>
+                </div>
+              )}
+            </Form.List>
+          </div>
 
           <Form.Item name="notes" label="Notes">
             <Input.TextArea rows={2} placeholder="Notes (e.g. health)" />
           </Form.Item>
-          </Form>
-        )}
+        </Form>
       </Modal>
     </div>
   );
