@@ -1,18 +1,17 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { App, Button, Card, Col, DatePicker, Input, InputNumber, Modal, Row, Select, Space, Statistic, Table, Typography } from "antd";
+import { App, Button, Card, Col, Row, Space, Statistic, Table, Typography } from "antd";
 import { FilterOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import type { Dayjs } from "dayjs";
 import dayjs from "dayjs";
 import apiClient from "@/utils/api";
 import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
 import { formatInr } from "@/utils/formatCurrency";
+import TransactionsFilterModal, { type TransactionFilters } from "./TransactionsFilterModal";
 
 const { Title, Text } = Typography;
-const { RangePicker } = DatePicker;
 
 type TransactionRow = {
   _id: string;
@@ -21,7 +20,7 @@ type TransactionRow = {
   branchId: string;
   amount: number;
   method: "cash" | "upi" | "card";
-  status: "success" | "pending" | "failed";
+  status: "success" | "pending" | "failed" | "refunded";
   transactionRef: string | null;
   paidAt: string;
   createdAt: string;
@@ -29,7 +28,6 @@ type TransactionRow = {
   memberPhone: string;
   memberEmail: string | null;
   planName: string;
-  membershipStatus: "active" | "expired" | "cancelled" | "paused" | null;
 };
 
 type TransactionInsights = {
@@ -42,6 +40,8 @@ type TransactionInsights = {
   failedAmount: number;
   pendingCount: number;
   pendingAmount: number;
+  refundedCount: number;
+  refundedAmount: number;
 };
 
 type TransactionsResponse = {
@@ -54,18 +54,6 @@ type TransactionsResponse = {
   message?: string;
 };
 
-type TransactionFilters = {
-  search: string;
-  branchId: string;
-  status: "all" | "success" | "pending" | "failed";
-  method: "all" | "cash" | "upi" | "card";
-  dateRange: [Dayjs | null, Dayjs | null] | null;
-  minAmount: number | null;
-  maxAmount: number | null;
-  sortBy: "paidAt" | "createdAt" | "amount";
-  sortOrder: "desc" | "asc";
-};
-
 const EMPTY_INSIGHTS: TransactionInsights = {
   totalTransactions: 0,
   totalAmount: 0,
@@ -75,7 +63,9 @@ const EMPTY_INSIGHTS: TransactionInsights = {
   failedCount: 0,
   failedAmount: 0,
   pendingCount: 0,
-  pendingAmount: 0
+  pendingAmount: 0,
+  refundedCount: 0,
+  refundedAmount: 0
 };
 
 function formatDateTime(iso: string): string {
@@ -84,6 +74,7 @@ function formatDateTime(iso: string): string {
 }
 
 export default function TransactionsPanel() {
+  const STORAGE_KEY = "transactionFilters";
   const { message } = App.useApp();
   const session = useAppSelector(selectSession);
   const defaultBranchId = session?.activeBranch?.id ?? session?.user?.defaults?.branchId ?? "";
@@ -110,22 +101,59 @@ export default function TransactionsPanel() {
     [defaultBranchId]
   );
   const [filters, setFilters] = useState<TransactionFilters>(initialFilters);
-  const [draftFilters, setDraftFilters] = useState<TransactionFilters>(initialFilters);
   const [filterOpen, setFilterOpen] = useState(false);
-
-  useEffect(() => {
-    setFilters(initialFilters);
-    setDraftFilters(initialFilters);
-  }, [initialFilters]);
+  const [activeFilters, setActiveFilters] = useState(0);
 
   const branchOptions = useMemo(
     () => (session?.gym?.branches ?? []).map((b) => ({ value: b.id, label: `${b.code} — ${b.name}` })),
     [session?.gym?.branches]
   );
 
+  const countActiveFilters = useCallback((value: TransactionFilters) => {
+    let count = 0;
+    if (value.search) count += 1;
+    if (value.branchId) count += 1;
+    if (value.status !== "all") count += 1;
+    if (value.method !== "all") count += 1;
+    if (value.dateRange?.[0] || value.dateRange?.[1]) count += 1;
+    if (value.minAmount !== null || value.maxAmount !== null) count += 1;
+    if (value.sortBy !== "paidAt" || value.sortOrder !== "desc") count += 1;
+    return count;
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const savedFiltersRaw = window.localStorage.getItem(STORAGE_KEY);
+    if (!savedFiltersRaw) {
+      setFilters(initialFilters);
+      setActiveFilters(countActiveFilters(initialFilters));
+      return;
+    }
+    try {
+      const saved = JSON.parse(savedFiltersRaw) as Omit<TransactionFilters, "dateRange"> & {
+        fromDate?: string;
+        toDate?: string;
+      };
+      const restored: TransactionFilters = {
+        ...initialFilters,
+        ...saved,
+        dateRange:
+          saved.fromDate && saved.toDate ? [dayjs(saved.fromDate), dayjs(saved.toDate)] : null
+      };
+      setFilters(restored);
+      setActiveFilters(countActiveFilters(restored));
+    } catch {
+      setFilters(initialFilters);
+      setActiveFilters(countActiveFilters(initialFilters));
+    }
+  }, [initialFilters, countActiveFilters]);
+
   useEffect(() => {
     setPage(1);
-  }, [filters]);
+    setActiveFilters(countActiveFilters(filters));
+  }, [filters, countActiveFilters]);
 
   const loadTransactions = useCallback(async () => {
     setLoading(true);
@@ -212,22 +240,30 @@ export default function TransactionsPanel() {
       { title: "Status", dataIndex: "status", key: "status", width: 100, render: (value: string) => value.toUpperCase() },
       { title: "Amount", dataIndex: "amount", key: "amount", width: 130, align: "right", render: (value: number) => formatInr(value) },
       { title: "Reference", dataIndex: "transactionRef", key: "transactionRef", width: 160, ellipsis: true, render: (value: string | null) => value || "—" },
-      { title: "Membership", dataIndex: "membershipStatus", key: "membershipStatus", width: 120, render: (value: string | null) => (value ? value.toUpperCase() : "—") }
     ],
     []
   );
 
-  const activeFilterCount = useMemo(() => {
-    let count = 0;
-    if (filters.search) count += 1;
-    if (filters.branchId) count += 1;
-    if (filters.status !== "all") count += 1;
-    if (filters.method !== "all") count += 1;
-    if (filters.dateRange?.[0] || filters.dateRange?.[1]) count += 1;
-    if (filters.minAmount !== null || filters.maxAmount !== null) count += 1;
-    if (filters.sortBy !== "paidAt" || filters.sortOrder !== "desc") count += 1;
-    return count;
-  }, [filters]);
+  const applyFilters = (nextFilters: TransactionFilters) => {
+    setFilters(nextFilters);
+    if (typeof window !== "undefined") {
+      const payload = {
+        ...nextFilters,
+        fromDate: nextFilters.dateRange?.[0]?.toISOString() ?? "",
+        toDate: nextFilters.dateRange?.[1]?.toISOString() ?? ""
+      };
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    }
+    setFilterOpen(false);
+  };
+
+  const clearFilters = () => {
+    setFilters(initialFilters);
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(STORAGE_KEY);
+    }
+    setFilterOpen(false);
+  };
 
   return (
     <Space direction="vertical" size={14} style={{ width: "100%" }}>
@@ -236,8 +272,25 @@ export default function TransactionsPanel() {
           Transactions
         </Title>
         <Space>
-          <Button type="primary" icon={<FilterOutlined />} onClick={() => setFilterOpen(true)}>
-            Filter {activeFilterCount > 0 ? `(${activeFilterCount})` : ""}
+          <Button icon={<FilterOutlined />} onClick={() => setFilterOpen(true)}>
+            Filters
+            {activeFilters > 0 ? (
+              <span
+                style={{
+                  marginLeft: 8,
+                  backgroundColor: "#1677ff",
+                  color: "#fff",
+                  borderRadius: "50%",
+                  padding: "2px 6px",
+                  fontSize: "12px",
+                  minWidth: "16px",
+                  display: "inline-block",
+                  textAlign: "center"
+                }}
+              >
+                {activeFilters}
+              </span>
+            ) : null}
           </Button>
         </Space>
       </div>
@@ -260,8 +313,8 @@ export default function TransactionsPanel() {
         <Col xs={24} sm={12} md={6}>
           <Card size="small">
             <Statistic
-              title="Pending Amount"
-              value={insights.pendingAmount}
+              title="Refunded Amount (range)"
+              value={insights.refundedAmount}
               formatter={(value) => formatInr(Number(value))}
             />
           </Card>
@@ -283,7 +336,9 @@ export default function TransactionsPanel() {
           pageSize,
           total,
           showSizeChanger: true,
-          pageSizeOptions: ["10", "20", "50", "100"],
+          showQuickJumper: true,
+          pageSizeOptions: ["10", "25", "50", "100"],
+          size: "small",
           onChange: (nextPage, nextPageSize) => {
             setPage(nextPage);
             setPageSize(nextPageSize);
@@ -294,109 +349,14 @@ export default function TransactionsPanel() {
         locale={{ emptyText: "No transactions found for selected filters." }}
       />
 
-      <Modal
-        title="Filter Transactions"
+      <TransactionsFilterModal
         open={filterOpen}
-        onCancel={() => setFilterOpen(false)}
-        onOk={() => {
-          setFilters(draftFilters);
-          setFilterOpen(false);
-        }}
-        okText="Apply Filters"
-        cancelText="Close"
-        width={720}
-      >
-        <Space direction="vertical" style={{ width: "100%" }} size={12}>
-          <Input
-            allowClear
-            placeholder="Search member, phone, email, ref"
-            value={draftFilters.search}
-            onChange={(e) => setDraftFilters((prev) => ({ ...prev, search: e.target.value.trim() }))}
-          />
-          <Select
-            value={draftFilters.branchId || undefined}
-            onChange={(value) => setDraftFilters((prev) => ({ ...prev, branchId: value ?? "" }))}
-            placeholder="Branch"
-            options={branchOptions}
-            allowClear
-          />
-          <Space style={{ width: "100%" }}>
-            <Select
-              value={draftFilters.status}
-              onChange={(value) => setDraftFilters((prev) => ({ ...prev, status: value }))}
-              options={[
-                { value: "all", label: "All status" },
-                { value: "success", label: "Success" },
-                { value: "pending", label: "Pending" },
-                { value: "failed", label: "Failed" }
-              ]}
-              style={{ flex: 1 }}
-            />
-            <Select
-              value={draftFilters.method}
-              onChange={(value) => setDraftFilters((prev) => ({ ...prev, method: value }))}
-              options={[
-                { value: "all", label: "All methods" },
-                { value: "cash", label: "Cash" },
-                { value: "upi", label: "UPI" },
-                { value: "card", label: "Card" }
-              ]}
-              style={{ flex: 1 }}
-            />
-          </Space>
-          <RangePicker
-            value={draftFilters.dateRange}
-            onChange={(value) => setDraftFilters((prev) => ({ ...prev, dateRange: value }))}
-            format="DD-MM-YYYY"
-            style={{ width: "100%" }}
-          />
-          <Space style={{ width: "100%" }}>
-            <InputNumber
-              min={0}
-              step={100}
-              value={draftFilters.minAmount}
-              onChange={(value) => setDraftFilters((prev) => ({ ...prev, minAmount: typeof value === "number" ? value : null }))}
-              placeholder="Min amount"
-              style={{ width: "100%" }}
-            />
-            <InputNumber
-              min={0}
-              step={100}
-              value={draftFilters.maxAmount}
-              onChange={(value) => setDraftFilters((prev) => ({ ...prev, maxAmount: typeof value === "number" ? value : null }))}
-              placeholder="Max amount"
-              style={{ width: "100%" }}
-            />
-          </Space>
-          <Space style={{ width: "100%" }}>
-            <Select
-              value={draftFilters.sortBy}
-              onChange={(value) => setDraftFilters((prev) => ({ ...prev, sortBy: value }))}
-              options={[
-                { value: "paidAt", label: "Sort by Paid At" },
-                { value: "createdAt", label: "Sort by Created At" },
-                { value: "amount", label: "Sort by Amount" }
-              ]}
-              style={{ flex: 1 }}
-            />
-            <Select
-              value={draftFilters.sortOrder}
-              onChange={(value) => setDraftFilters((prev) => ({ ...prev, sortOrder: value }))}
-              options={[
-                { value: "desc", label: "Descending" },
-                { value: "asc", label: "Ascending" }
-              ]}
-              style={{ flex: 1 }}
-            />
-          </Space>
-          <Button
-            onClick={() => setDraftFilters(initialFilters)}
-            style={{ width: "100%" }}
-          >
-            Reset Filters
-          </Button>
-        </Space>
-      </Modal>
+        branchOptions={branchOptions}
+        currentFilters={filters}
+        onClose={() => setFilterOpen(false)}
+        onApply={applyFilters}
+        onClear={clearFilters}
+      />
     </Space>
   );
 }

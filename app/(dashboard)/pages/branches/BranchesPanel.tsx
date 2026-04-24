@@ -485,7 +485,9 @@ export default function BranchesPanel() {
               pageSize,
               total,
               showSizeChanger: true,
-              pageSizeOptions: ["10", "20", "50"],
+              showQuickJumper: true,
+              pageSizeOptions: ["10", "25", "50", "100"],
+              size: "small",
               showTotal: (t, range) => `${range[0]}-${range[1]} of ${t} branches`,
               onChange: (p, ps) => {
                 setPage(p);

@@ -46,6 +46,9 @@ function MembersPageContent() {
   }, [searchParams]);
 
   const switchTab = (key: "members" | "memberships") => {
+    if (key === activeKey) {
+      return;
+    }
     const params = new URLSearchParams(searchParams.toString());
     params.set("tab", key);
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
@@ -71,6 +74,7 @@ function MembersPageContent() {
       <Tabs
         activeKey={activeKey}
         onChange={onTabChange}
+        destroyOnHidden
         items={[
           {
             key: "members",
@@ -80,14 +84,14 @@ function MembersPageContent() {
                 <Badge count={memberCount} size="small" style={{ marginLeft: 6 }} overflowCount={999} />
               </span>
             ),
-            children: (
+            children: activeKey === "members" ? (
               <MembersPanel
                 onMemberCountChange={setMemberCount}
                 onRequestCreateMembershipPlan={requestMembershipCreateFromMembers}
                 createdPlanFromMemberships={recentlyCreatedPlan}
                 onCreatedPlanHandled={() => setRecentlyCreatedPlan(null)}
               />
-            )
+            ) : null
           },
           {
             key: "memberships",
@@ -96,12 +100,12 @@ function MembersPageContent() {
                 <IdcardOutlined /> Memberships
               </span>
             ),
-            children: (
+            children: activeKey === "memberships" ? (
               <MembershipPlansPanel
                 createRequestId={membershipCreateRequestId}
                 onPlanCreatedFromExternalRequest={handlePlanCreatedFromMemberships}
               />
-            )
+            ) : null
           }
         ]}
       />

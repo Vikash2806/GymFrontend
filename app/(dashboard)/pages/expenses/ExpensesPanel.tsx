@@ -659,7 +659,9 @@ export default function ExpensesPanel() {
                     pageSize: expensesPageSize,
                     total: expensesTotal,
                     showSizeChanger: true,
-                    pageSizeOptions: ["10", "20", "50"],
+                    showQuickJumper: true,
+                    pageSizeOptions: ["10", "25", "50", "100"],
+                    size: "small",
                     onChange: (page, pageSize) => {
                       setExpensesPage(page);
                       setExpensesPageSize(pageSize);

@@ -495,6 +495,10 @@ export default function StaffManagerPanel() {
           pageSize,
           total,
           showSizeChanger: true,
+          showQuickJumper: true,
+          pageSizeOptions: ["10", "25", "50", "100"],
+          showTotal: (value, range) => `${range[0]}-${range[1]} of ${value} staff`,
+          size: "small",
           onChange: (p, ps) => {
             setPage(p);
             setPageSize(ps);

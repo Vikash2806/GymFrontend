@@ -41,6 +41,10 @@ export type Member = {
     subscriptions: { totalPaid: number; totalPending: number };
   };
   flags: { hasActiveSubscription: boolean; hasPendingPayment: boolean };
+  paymentStatus: {
+    status: "paid" | "partially_paid" | null;
+    updatedAt: string;
+  } | null;
   notes: string;
   createdAt: string;
   updatedAt: string;

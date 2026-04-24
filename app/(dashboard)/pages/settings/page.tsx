@@ -63,6 +63,31 @@ export default function SettingsPage() {
     }
   };
 
+  const deleteGymProfilePicture = async () => {
+    if (!canEditGymProfile) {
+      message.error("You do not have permission to update gym profile.");
+      return;
+    }
+    const currentGymName = String(form.getFieldValue("gymName") ?? gymName).trim() || gymName;
+    setSaving(true);
+    try {
+      await apiClient.patch("/gym/me", {
+        name: currentGymName,
+        logoUrl: null
+      });
+      dispatch(updateGymInSession({ name: currentGymName, logoUrl: null }));
+      const me = await apiClient.get("/auth/me");
+      dispatch(setSession(me.data));
+      setLogoFile(undefined);
+      message.success("Gym profile picture deleted.");
+      clearDirty("settings-page");
+    } catch {
+      message.error("Could not delete gym profile picture.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <RbacPermissionGuard permission={FEATURES.SETTINGS}>
       <Card title="Gym Settings">
@@ -112,11 +137,9 @@ export default function SettingsPage() {
                   <Button
                     danger
                     icon={<DeleteOutlined />}
+                    loading={saving}
                     disabled={!canEditGymProfile}
-                    onClick={() => {
-                      setLogoFile(null);
-                      setDirty("settings-page", true);
-                    }}
+                    onClick={() => void deleteGymProfilePicture()}
                   >
                     Delete picture
                   </Button>
@@ -130,15 +153,6 @@ export default function SettingsPage() {
           <Space>
             <Button type="primary" loading={saving} onClick={() => void saveGymProfile()} disabled={!canEditGymProfile}>
               Save changes
-            </Button>
-            <Button
-              onClick={() => {
-                form.resetFields();
-                setLogoFile(undefined);
-                clearDirty("settings-page");
-              }}
-            >
-              Reset
             </Button>
           </Space>
         </Form>

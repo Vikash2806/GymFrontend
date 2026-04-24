@@ -340,7 +340,14 @@ export default function MembershipPlansPanel({
         columns={columns}
         dataSource={plans}
         components={tableComponents}
-        pagination={{ pageSize: 10, showSizeChanger: true }}
+        pagination={{
+          pageSize: 10,
+          showSizeChanger: true,
+          showQuickJumper: true,
+          pageSizeOptions: ["10", "25", "50", "100"],
+          showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} plans`,
+          size: "small"
+        }}
         scroll={{ x: 900 }}
       />
 

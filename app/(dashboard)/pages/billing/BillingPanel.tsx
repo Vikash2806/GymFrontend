@@ -360,10 +360,11 @@ export default function BillingPanel() {
           pageSize,
           total,
           showSizeChanger: true,
-          pageSizeOptions: ["10", "20", "50", "100"],
+          pageSizeOptions: ["10", "25", "50", "100"],
           showQuickJumper: true,
           hideOnSinglePage: false,
           position: ["bottomRight"],
+          size: "small",
           showTotal: (value, range) => `${range[0]}-${range[1]} of ${value} pending payments`,
           onChange: (nextPage, nextPageSize) => {
             setPage(nextPage);

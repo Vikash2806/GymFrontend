@@ -9,8 +9,6 @@ import {
   Checkbox,
   Col,
   DatePicker,
-  Descriptions,
-  Divider,
   Dropdown,
   Form,
   Input,
@@ -34,6 +32,7 @@ import {
   CloseCircleOutlined,
   ClockCircleOutlined,
   DeleteOutlined,
+  EllipsisOutlined,
   EditOutlined,
   EyeOutlined,
   HomeOutlined,
@@ -55,11 +54,13 @@ import { FEATURES, hasFeature } from "@/utils/permissions";
 import { getCityOptions, getCountryOptions, getStateOptions } from "@/utils/options";
 import ExportButton from "@/app/components/Export/ExportButton";
 import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
+import MemberDetailsModal from "./MemberDetailsModal";
 
 const { Title, Text } = Typography;
 const DEFAULT_COUNTRY_CODE = "IN";
 const DEFAULT_STATE_CODE = "TN";
 const DEFAULT_CITY_CODE = "TN_TNJ";
+const PLAN_PRICE_CAP_MESSAGE = "can't able to enter more than the membership price plan.";
 
 const TABLE_HEADER_STYLE: React.CSSProperties = { fontSize: 15, fontWeight: 600 };
 
@@ -130,44 +131,6 @@ function mapMemberFieldLabel(path: Array<string | number>): string {
   return directMap[root] ?? root;
 }
 
-function mapMemberFieldLabel(path: Array<string | number>): string {
-  const normalized = path.map((part) => String(part));
-  const root = normalized[0] ?? "";
-  if (root === "emergencyContacts") {
-    const leaf = normalized[2] ?? "";
-    if (leaf === "name") {
-      return "Emergency contact name";
-    }
-    if (leaf === "phone") {
-      return "Emergency contact phone";
-    }
-    if (leaf === "relation") {
-      return "Emergency contact relation";
-    }
-    return "Emergency contact";
-  }
-  const directMap: Record<string, string> = {
-    firstName: "First Name",
-    lastName: "Last Name",
-    phone: "Mobile number",
-    branchId: "Branch",
-    email: "Email",
-    gender: "Gender",
-    dob: "Date of Birth",
-    dateOfJoining: "Date of Joining",
-    street: "Street Address",
-    city: "City",
-    state: "State",
-    zipcode: "Zipcode",
-    country: "Country",
-    planId: "Membership plan",
-    paidAmount: "Paid amount",
-    paymentMethod: "Payment method",
-    notes: "Notes"
-  };
-  return directMap[root] ?? root;
-}
-
 type ListResponse = {
   success: boolean;
   members?: Member[];
@@ -197,7 +160,7 @@ type SubscriptionHistoryItem = {
   createdAt: string;
 };
 type SubscriptionHistoryResponse = { success: boolean; subscriptions?: SubscriptionHistoryItem[]; message?: string };
-type MemberTableColumnKey = "member" | "status" | "phone" | "age" | "plan" | "billing" | "actions";
+type MemberTableColumnKey = "member" | "status" | "phone" | "age" | "plan" | "paymentStatus" | "billing" | "actions";
 
 function ageFromDob(iso: string | null): string {
   if (!iso) {
@@ -306,7 +269,6 @@ export default function MembersPanel({
   const [modalOpen, setModalOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailMember, setDetailMember] = useState<Member | null>(null);
-  const [detailMembershipHistory, setDetailMembershipHistory] = useState<SubscriptionHistoryItem[]>([]);
   const [editing, setEditing] = useState<Member | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [avatarList, setAvatarList] = useState<UploadFile[]>([]);
@@ -315,14 +277,13 @@ export default function MembersPanel({
   const [lookupMember, setLookupMember] = useState<Member | null>(null);
   const [lookupNote, setLookupNote] = useState<string>("");
   const [newMembershipTarget, setNewMembershipTarget] = useState<Member | null>(null);
-  const [newMembershipPlanId, setNewMembershipPlanId] = useState<string>("");
-  const [newMembershipPaidAmount, setNewMembershipPaidAmount] = useState<number>(0);
   const [visibleColumnKeys, setVisibleColumnKeys] = useState<MemberTableColumnKey[]>([
     "member",
     "status",
     "phone",
     "age",
     "plan",
+    "paymentStatus",
     "billing",
     "actions"
   ]);
@@ -332,6 +293,8 @@ export default function MembersPanel({
   const watchedBranchId = Form.useWatch("branchId", form);
   const watchedCountry = Form.useWatch("country", form);
   const watchedState = Form.useWatch("state", form);
+  const watchedPlanId = Form.useWatch("planId", form);
+  const isAssigningNewMembership = Boolean(newMembershipTarget);
   const { setDirty, clearDirty, confirmNavigation } = useUnsavedChanges();
 
   const loadPlans = useCallback(async (branchId: string) => {
@@ -416,6 +379,13 @@ export default function MembersPanel({
     }
     return effectiveBranchId || defaultBranchId || "";
   }, [editing, watchedBranchId, effectiveBranchId, defaultBranchId]);
+  const selectedPlanPrice = useMemo(() => {
+    if (!watchedPlanId) {
+      return null;
+    }
+    const selectedPlan = plans.find((plan) => plan._id === watchedPlanId);
+    return selectedPlan ? Number(selectedPlan.price ?? 0) : null;
+  }, [plans, watchedPlanId]);
 
   useEffect(() => {
     if (editing) {
@@ -470,7 +440,6 @@ export default function MembersPanel({
       })),
     [plans]
   );
-
   const countryOptions = useMemo(() => getCountryOptions("en", "code"), []);
   const sectionTitleStyle: React.CSSProperties = { marginBottom: 12 };
   const sectionCardStyle: React.CSSProperties = {
@@ -506,8 +475,6 @@ export default function MembersPanel({
   const openCreate = () => {
     setEditing(null);
     setNewMembershipTarget(null);
-    setNewMembershipPlanId("");
-    setNewMembershipPaidAmount(0);
     setAvatarList([]);
     setLookupMember(null);
     setLookupNote("");
@@ -536,8 +503,6 @@ export default function MembersPanel({
   const openEdit = async (record: Member) => {
     setEditing(record);
     setNewMembershipTarget(null);
-    setNewMembershipPlanId("");
-    setNewMembershipPaidAmount(0);
     setAvatarList([]);
     setLookupMember(null);
     setLookupNote("");
@@ -589,11 +554,14 @@ export default function MembersPanel({
   const closeModal = () => {
     setModalOpen(false);
     setEditing(null);
+    setNewMembershipTarget(null);
     form.resetFields();
     setAvatarList([]);
     setLookupMember(null);
     setLookupNote("");
     setLookupLoading(false);
+    setModalDirty(false);
+    clearDirty("members-modal");
   };
 
   const requestCloseModal = useCallback(() => {
@@ -609,14 +577,19 @@ export default function MembersPanel({
   const openNewMembership = (record: Member) => {
     setEditing(null);
     setNewMembershipTarget(record);
-    setNewMembershipPlanId("");
-    setNewMembershipPaidAmount(0);
     setAvatarList([]);
     setLookupLoading(false);
     setLookupMember(record);
     setLookupNote(`Assigning new membership for ${record.firstName} ${record.lastName}.`);
     void loadPlans(record.branchId);
     form.resetFields();
+    form.setFieldsValue({
+      planId: undefined,
+      paidAmount: 0,
+      paymentMethod: "cash" as const
+    });
+    setModalDirty(false);
+    clearDirty("members-modal");
     setModalOpen(true);
   };
 
@@ -700,21 +673,15 @@ export default function MembersPanel({
   const closeDetail = () => {
     setDetailOpen(false);
     setDetailMember(null);
-    setDetailMembershipHistory([]);
   };
 
   const openView = async (record: Member) => {
     setDetailOpen(true);
     setDetailMember(null);
-    setDetailMembershipHistory([]);
     try {
-      const [memberRes, historyRes] = await Promise.all([
-        apiClient.get<MemberResponse>(`/gym/members/${record._id}`),
-        apiClient.get<SubscriptionHistoryResponse>(`/gym/members/${record._id}/subscriptions`)
-      ]);
+      const memberRes = await apiClient.get<MemberResponse>(`/gym/members/${record._id}`);
       if (memberRes.data.success && memberRes.data.member) {
         setDetailMember(memberRes.data.member);
-        setDetailMembershipHistory(historyRes.data.subscriptions ?? []);
       } else {
         message.error(memberRes.data.message ?? "Could not load member.");
         setDetailOpen(false);
@@ -747,6 +714,60 @@ export default function MembersPanel({
     }
   };
 
+  const getRowActionItems = (record: Member) => [
+    {
+      key: "view",
+      label: "View Details",
+      icon: <EyeOutlined />,
+      onClick: () => {
+        void openView(record);
+      }
+    },
+    {
+      key: "cancel",
+      label: "Cancel Membership",
+      icon: <CloseCircleOutlined />,
+      danger: true,
+      disabled: !record.currentSubscription,
+      onClick: () => {
+        Modal.confirm({
+          title: "Cancel membership and reverse overdue?",
+          okText: "Cancel Membership",
+          okButtonProps: { danger: true },
+          onOk: async () => {
+            await handleCancelMembership(record);
+          }
+        });
+      }
+    },
+    {
+      key: "edit",
+      label: "Edit",
+      icon: <EditOutlined />,
+      disabled: !canUpdateMember,
+      onClick: () => {
+        void openEdit(record);
+      }
+    },
+    {
+      key: "delete",
+      label: "Delete",
+      icon: <DeleteOutlined />,
+      danger: true,
+      disabled: !canDeleteMember,
+      onClick: () => {
+        Modal.confirm({
+          title: "Delete this member?",
+          okText: "Delete",
+          okButtonProps: { danger: true },
+          onOk: async () => {
+            await handleDelete(record);
+          }
+        });
+      }
+    }
+  ];
+
   const beforeUploadAvatar = (file: File) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -762,18 +783,29 @@ export default function MembersPanel({
   const onSubmit = async () => {
     try {
       if (newMembershipTarget) {
-        if (!newMembershipPlanId) {
+        const membershipValues = await form.validateFields(["planId", "paidAmount", "paymentMethod"]);
+        if (!membershipValues.planId) {
           message.error("Select a membership plan.");
           return;
+        }
+        const selectedPlan = plans.find((plan) => plan._id === membershipValues.planId);
+        const selectedPlanCap = selectedPlan ? Number(selectedPlan.price ?? 0) : null;
+        const normalizedPaidAmountRaw = Number(membershipValues.paidAmount ?? 0);
+        const normalizedPaidAmount = Number.isFinite(normalizedPaidAmountRaw) ? normalizedPaidAmountRaw : 0;
+        const finalPaidAmount =
+          selectedPlanCap !== null ? Math.min(normalizedPaidAmount, selectedPlanCap) : normalizedPaidAmount;
+        if (selectedPlanCap !== null && normalizedPaidAmount > selectedPlanCap) {
+          form.setFieldValue("paidAmount", selectedPlanCap);
+          message.warning(PLAN_PRICE_CAP_MESSAGE);
         }
         setSubmitting(true);
         const subRes = await apiClient.post<SubscriptionCreateResponse>(
           `/gym/members/${newMembershipTarget._id}/subscriptions`,
           {
-            planId: newMembershipPlanId,
+            planId: membershipValues.planId,
             startDate: new Date().toISOString(),
-            paidAmount: newMembershipPaidAmount,
-            method: "cash",
+            paidAmount: finalPaidAmount,
+            method: membershipValues.paymentMethod ?? "cash",
             transactionRef: null,
             autoRenew: false
           }
@@ -857,6 +889,16 @@ export default function MembersPanel({
         setSubmitting(false);
         return;
       }
+      const selectedPlan = plans.find((plan) => plan._id === values.planId);
+      const selectedPlanCap = selectedPlan ? Number(selectedPlan.price ?? 0) : null;
+      const normalizedPaidAmountRaw = Number(values.paidAmount ?? 0);
+      const normalizedPaidAmount = Number.isFinite(normalizedPaidAmountRaw) ? normalizedPaidAmountRaw : 0;
+      const finalPaidAmount =
+        selectedPlanCap !== null ? Math.min(normalizedPaidAmount, selectedPlanCap) : normalizedPaidAmount;
+      if (selectedPlanCap !== null && normalizedPaidAmount > selectedPlanCap) {
+        form.setFieldValue("paidAmount", selectedPlanCap);
+        message.warning(PLAN_PRICE_CAP_MESSAGE);
+      }
 
       const scopedBranchId = canManageBranches ? values.branchId : effectiveBranchId;
       if (!scopedBranchId) {
@@ -907,7 +949,7 @@ export default function MembersPanel({
         subscription: {
           planId: values.planId,
           startDate: values.dateOfJoining.toDate().toISOString(),
-          paidAmount: values.paidAmount ?? 0,
+          paidAmount: finalPaidAmount,
           method: values.paymentMethod,
           transactionRef: null,
           autoRenew: false
@@ -949,7 +991,7 @@ export default function MembersPanel({
           {
             planId: values.planId,
             startDate: values.dateOfJoining.toDate().toISOString(),
-            paidAmount: values.paidAmount ?? 0,
+            paidAmount: finalPaidAmount,
             method: values.paymentMethod,
             transactionRef: null,
             autoRenew: false
@@ -1017,9 +1059,13 @@ export default function MembersPanel({
                 ? `${record.firstName.charAt(0) || ""}${record.lastName.charAt(0) || ""}`.trim() || "?"
                 : null}
             </Avatar>
-            <span>
+            <Button
+              type="link"
+              onClick={() => void openView(record)}
+              style={{ padding: 0, height: "auto", textDecoration: "none" }}
+            >
               {record.firstName} {record.lastName}
-            </span>
+            </Button>
           </Space>
         )
       },
@@ -1077,9 +1123,22 @@ export default function MembersPanel({
         render: (_, record) => billingCell(record, token)
       },
       {
+        title: "Payment Status",
+        key: "paymentStatus",
+        width: 130,
+        render: (_, record) =>
+          record.paymentStatus?.status ? (
+            <Tag color={record.paymentStatus.status === "paid" ? "success" : "processing"}>
+              {record.paymentStatus.status === "paid" ? "PAID" : "PARTIALLY PAID"}
+            </Tag>
+          ) : (
+            "—"
+          )
+      },
+      {
         title: "Actions",
         key: "actions",
-        width: 280,
+        width: 170,
         fixed: "right",
         render: (_, record) => (
           <Space size={4} wrap>
@@ -1095,47 +1154,9 @@ export default function MembersPanel({
                 New Membership
               </Button>
             </Tooltip>
-            <Popconfirm
-              title="Cancel membership and reverse overdue?"
-              okText="Cancel Membership"
-              onConfirm={() => void handleCancelMembership(record)}
-              disabled={!record.currentSubscription}
-            >
-              <Tooltip title="Cancel Membership">
-                <Button
-                  type="link"
-                  icon={<CloseCircleOutlined />}
-                  aria-label="Cancel membership"
-                  disabled={!record.currentSubscription}
-                  danger
-                >
-                  Cancel
-                </Button>
-              </Tooltip>
-            </Popconfirm>
-            <Tooltip title="View">
-              <Button type="text" icon={<EyeOutlined />} onClick={() => void openView(record)} aria-label="View member" />
-            </Tooltip>
-            <Tooltip title="Edit">
-              <Button
-                type="text"
-                icon={<EditOutlined />}
-                onClick={() => void openEdit(record)}
-                aria-label="Edit member"
-                disabled={!canUpdateMember}
-              />
-            </Tooltip>
-            <Popconfirm title="Delete this member?" okText="Delete" okButtonProps={{ danger: true }} onConfirm={() => void handleDelete(record)}>
-              <Tooltip title="Delete">
-                <Button
-                  type="text"
-                  danger
-                  icon={<DeleteOutlined />}
-                  aria-label="Delete member"
-                  disabled={!canDeleteMember}
-                />
-              </Tooltip>
-            </Popconfirm>
+            <Dropdown menu={{ items: getRowActionItems(record) }} trigger={["click"]} placement="bottomRight">
+              <Button type="text" icon={<EllipsisOutlined />} aria-label="More actions" />
+            </Dropdown>
           </Space>
         )
       }
@@ -1157,6 +1178,7 @@ export default function MembersPanel({
       { label: "Mobile Number", value: "phone" },
       { label: "Age", value: "age" },
       { label: "Membership", value: "plan" },
+      { label: "Payment Status", value: "paymentStatus" },
       { label: "Billing", value: "billing" },
       { label: "Actions", value: "actions" }
     ],
@@ -1258,6 +1280,9 @@ export default function MembersPanel({
           pageSize: membersPageSize,
           total: membersTotal,
           showSizeChanger: true,
+          showQuickJumper: true,
+          pageSizeOptions: ["10", "25", "50", "100"],
+          size: "small",
           onChange: (page, pageSize) => {
             setMembersPage(page);
             setMembersPageSize(pageSize);
@@ -1268,138 +1293,12 @@ export default function MembersPanel({
         locale={{ emptyText: "No Data Found" }}
       />
 
-      <Modal
-        title="Member Details"
+      <MemberDetailsModal
         open={detailOpen}
-        onCancel={closeDetail}
-        footer={[
-          <Button key="close" type="primary" onClick={closeDetail}>
-            Close
-          </Button>
-        ]}
-        width={WIDE_MODAL_WIDTH}
-      >
-        {detailMember ? (
-          <>
-            <Space align="start" size={16} style={{ marginBottom: 16 }}>
-              <Avatar size={64} src={detailMember.profile.profilePicture || undefined}>
-                {!detailMember.profile.profilePicture
-                  ? `${detailMember.firstName.charAt(0)}${detailMember.lastName.charAt(0)}`
-                  : null}
-              </Avatar>
-              <div>
-                <Title level={5} style={{ margin: 0 }}>
-                  {detailMember.firstName} {detailMember.lastName}
-                </Title>
-                <Space size={8} style={{ marginTop: 8 }}>
-                  <Tag color={detailMember.status === "active" ? "success" : "error"}>
-                    {detailMember.status === "active" ? "ACTIVE" : "INACTIVE"}
-                  </Tag>
-                  {detailMember.flags?.hasPendingPayment ? <Tag color="warning">PAYMENT PENDING</Tag> : null}
-                </Space>
-              </div>
-            </Space>
-            <Descriptions column={1} size="small" bordered>
-              <Descriptions.Item label="Phone">+91{detailMember.profile.phone}</Descriptions.Item>
-              <Descriptions.Item label="Date of Birth">
-                {detailMember.profile.dob ? formatDisplayDate(detailMember.profile.dob) : "N/A"}
-              </Descriptions.Item>
-              <Descriptions.Item label="Age">{ageFromDob(detailMember.profile.dob)}</Descriptions.Item>
-              {/* <Descriptions.Item label="Last Visit">N/A</Descriptions.Item> */}
-            </Descriptions>
-            <Divider orientationMargin={8} />
-            <Text strong>Membership</Text>
-            <Descriptions column={1} size="small" bordered style={{ marginTop: 8 }}>
-              <Descriptions.Item label="Membership Type">
-                {detailMember.currentSubscription?.planName ?? "—"}
-              </Descriptions.Item>
-              <Descriptions.Item label="Total Amount (₹)">
-                {detailMember.currentSubscription
-                  ? formatInrWhole(detailMember.currentSubscription.payment.totalAmount)
-                  : "—"}
-              </Descriptions.Item>
-              <Descriptions.Item label="Start Date">
-                {detailMember.currentSubscription ? formatDisplayDate(detailMember.currentSubscription.startDate) : "—"}
-              </Descriptions.Item>
-              <Descriptions.Item label="End Date">
-                {detailMember.currentSubscription ? formatDisplayDate(detailMember.currentSubscription.endDate) : "—"}
-              </Descriptions.Item>
-              <Descriptions.Item label="Paid Amount (₹)">
-                {detailMember.currentSubscription
-                  ? formatInrWhole(detailMember.currentSubscription.payment.paidAmount)
-                  : "—"}
-              </Descriptions.Item>
-              <Descriptions.Item label="Outstanding Amount (₹)">
-                <Text type="danger">
-                  {detailMember.currentSubscription
-                    ? formatInrWhole(detailMember.currentSubscription.payment.pendingAmount)
-                    : "—"}
-                </Text>
-              </Descriptions.Item>
-            </Descriptions>
-            <Divider orientationMargin={8} />
-            <Text strong>Membership history</Text>
-            <div style={{ marginTop: 8 }}>
-              {detailMembershipHistory.length === 0 ? (
-                <Text type="secondary">No membership history found.</Text>
-              ) : (
-                <Space direction="vertical" style={{ width: "100%" }} size={8}>
-                  {detailMembershipHistory.map((sub) => (
-                    <div
-                      key={sub._id}
-                      style={{
-                        border: `1px solid ${token.colorBorderSecondary}`,
-                        borderRadius: 8,
-                        padding: "8px 12px"
-                      }}
-                    >
-                      <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                        <Text strong>{sub.planName}</Text>
-                        <Tag
-                          color={
-                            sub.status === "active"
-                              ? "success"
-                              : sub.status === "cancelled"
-                                ? "error"
-                                : sub.status === "expired"
-                                  ? "orange"
-                                  : "default"
-                          }
-                        >
-                          {sub.status.toUpperCase()}
-                        </Tag>
-                      </Space>
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        {formatDisplayDate(sub.startDate)} - {formatDisplayDate(sub.endDate)}
-                      </Text>
-                      <div>
-                        <Text style={{ fontSize: 12 }}>
-                          Paid: {formatInrWhole(sub.paymentSummary.paidAmount)} | Pending:{" "}
-                          {formatInrWhole(sub.paymentSummary.pendingAmount)}
-                        </Text>
-                      </div>
-                    </div>
-                  ))}
-                </Space>
-              )}
-            </div>
-            <Divider orientationMargin={8} />
-            <Text strong>Personal details</Text>
-            <Descriptions column={1} size="small" bordered style={{ marginTop: 8 }}>
-              <Descriptions.Item label="Gender">{detailMember.profile.gender}</Descriptions.Item>
-              <Descriptions.Item label="Address">
-                {[detailMember.address.street, detailMember.address.city, detailMember.address.state, detailMember.address.zipcode]
-                  .filter(Boolean)
-                  .join(", ") || "N/A"}
-              </Descriptions.Item>
-            </Descriptions>
-          </>
-        ) : (
-          <div style={{ padding: 24, textAlign: "center" }}>
-            <Text type="secondary">Loading…</Text>
-          </div>
-        )}
-      </Modal>
+        member={detailMember}
+        onClose={closeDetail}
+      />
+
 
       <Modal
         title={editing ? "Edit member" : newMembershipTarget ? "Assign new membership" : "Add or enroll member"}
@@ -1432,6 +1331,19 @@ export default function MembersPanel({
             setDirty("members-modal", true);
           }}
         >
+          {isAssigningNewMembership ? (
+            <Alert
+              type="info"
+              showIcon
+              message={`Assigning new membership for ${newMembershipTarget?.firstName ?? ""} ${newMembershipTarget?.lastName ?? ""}`.trim()}
+              style={{ marginBottom: 16 }}
+            />
+          ) : null}
+          {!isAssigningNewMembership && (
+            <>
+
+<Title level={5} style={sectionTitleStyle}>Basic details</Title>
+<div style={sectionCardStyle}>
           <Row gutter={16}>
             <Col xs={24} sm={12}>
               <Form.Item
@@ -1508,6 +1420,8 @@ export default function MembersPanel({
                 </Form.Item>
               </Col>
             </Row>
+
+            </div>
           {!editing && lookupLoading ? (
             <Alert type="info" message="Checking existing member by mobile..." showIcon style={{ marginBottom: 16 }} />
           ) : null}
@@ -1647,6 +1561,8 @@ export default function MembersPanel({
               </Col>
             </Row>
           </div>
+            </>
+          )}
 
           {!editing && (
             <>
@@ -1680,8 +1596,19 @@ export default function MembersPanel({
                     </Form.Item>
                   </Col>
                   <Col xs={24} sm={12}>
-                    <Form.Item name="paidAmount" label="Paid amount">
-                      <InputNumber min={0} step={100} style={{ width: "100%" }} />
+                    <Form.Item
+                      key={`paidAmount-${String(watchedPlanId ?? "none")}`}
+                      name="paidAmount"
+                      label="Paid amount"
+                      initialValue={selectedPlanPrice ?? 0}
+                      preserve={false}
+                    >
+                      <InputNumber
+                        min={0}
+                        max={selectedPlanPrice ?? undefined}
+                        step={100}
+                        style={{ width: "100%" }}
+                      />
                     </Form.Item>
                   </Col>
                 </Row>
@@ -1698,6 +1625,8 @@ export default function MembersPanel({
             </>
           )}
 
+          {!isAssigningNewMembership && (
+            <>
           <Title level={5} style={sectionTitleStyle}>Emergency contacts</Title>
           <div style={sectionCardStyle}>
             <Form.List name="emergencyContacts">
@@ -1763,6 +1692,8 @@ export default function MembersPanel({
           <Form.Item name="notes" label="Notes">
             <Input.TextArea rows={2} placeholder="Notes (e.g. health)" />
           </Form.Item>
+            </>
+          )}
         </Form>
       </Modal>
     </div>
