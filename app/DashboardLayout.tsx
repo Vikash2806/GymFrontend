@@ -7,6 +7,8 @@ import Sidebar from "./components/Sidebar/Sidebar";
 import apiClient from "@/utils/api";
 import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
+import { UnsavedChangesProvider, useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
+import { DiscardChangesModal } from "@/app/components/common/DiscardChangesModal";
 
 type Props = {
   children: React.ReactNode;
@@ -94,69 +96,43 @@ const DashboardLayout: React.FC<Props> = ({ children }) => {
     };
   }, [session]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const preloadDashboardChunks = () => {
-      if (cancelled) {
-        return;
-      }
-      void Promise.allSettled([
-        import("@/app/(dashboard)/pages/dashboard/DashboardPanel"),
-        import("@/app/(dashboard)/pages/branches/BranchesPanel"),
-        import("@/app/(dashboard)/pages/members/MembersPanel"),
-        import("@/app/(dashboard)/pages/members/MembershipPlansPanel"),
-        import("@/app/(dashboard)/pages/billing/BillingPanel"),
-        import("@/app/(dashboard)/pages/finance/FinancialOverviewPanel"),
-        import("@/app/(dashboard)/pages/expenses/ExpensesPanel"),
-        import("@/app/(dashboard)/pages/staff-manager/StaffManagerPanel")
-      ]);
-    };
-
-    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
-      const idleId = window.requestIdleCallback(preloadDashboardChunks, { timeout: 2000 });
-      return () => {
-        cancelled = true;
-        window.cancelIdleCallback(idleId);
-      };
-    }
-
-    const timer = globalThis.setTimeout(preloadDashboardChunks, 350);
-    return () => {
-      cancelled = true;
-      globalThis.clearTimeout(timer);
-    };
-  }, []);
-
   return (
-    <Layout style={{ height: "100vh", overflow: "hidden" }}>
-      <AppBar onHeightChange={setAppBarHeight} />
-      <Layout style={{ marginTop: appBarHeight, height: `calc(100vh - ${appBarHeight}px)`, display: "flex" }}>
-        <Sidebar appBarHeight={appBarHeight} onCollapseChange={setSidebarCollapsed} />
-        <Layout
-          style={{
-            marginLeft: sidebarCollapsed ? 80 : 240,
-            flex: 1,
-            overflow: "hidden",
-            transition: "margin-left 0.2s ease"
-          }}
-        >
-          <Layout.Content
+    <UnsavedChangesProvider>
+      <Layout style={{ height: "100vh", overflow: "hidden" }}>
+        <AppBar onHeightChange={setAppBarHeight} />
+        <Layout style={{ marginTop: appBarHeight, height: `calc(100vh - ${appBarHeight}px)`, display: "flex" }}>
+          <Sidebar appBarHeight={appBarHeight} onCollapseChange={setSidebarCollapsed} />
+          <Layout
             style={{
-              margin: 0,
-              padding: 12,
-              overflowY: "auto",
-              overflowX: "hidden",
-              background: token.colorBgLayout,
-              height: "100%"
+              marginLeft: sidebarCollapsed ? 80 : 240,
+              flex: 1,
+              overflow: "hidden",
+              transition: "margin-left 0.2s ease"
             }}
           >
-            {children}
-          </Layout.Content>
+            <Layout.Content
+              style={{
+                margin: 0,
+                padding: 12,
+                overflowY: "auto",
+                overflowX: "hidden",
+                background: token.colorBgLayout,
+                height: "100%"
+              }}
+            >
+              {children}
+            </Layout.Content>
+          </Layout>
         </Layout>
+        <DashboardDiscardChangesModal />
       </Layout>
-    </Layout>
+    </UnsavedChangesProvider>
   );
 };
+
+function DashboardDiscardChangesModal() {
+  const { showModal, discardAndNavigate, cancelNavigation } = useUnsavedChanges();
+  return <DiscardChangesModal open={showModal} onDiscard={discardAndNavigate} onCancel={cancelNavigation} />;
+}
 
 export default DashboardLayout;

@@ -123,9 +123,8 @@ const rbacSlice = createSlice({
         state.permissions = next.permissions;
       })
       .addCase(signupAsync.fulfilled, (state, action) => {
-        const next = fromSession(action.payload);
-        state.role = next.role;
-        state.permissions = next.permissions;
+        state.role = null;
+        state.permissions = [];
       })
       .addCase(setSession, (state, action) => {
         const next = fromSession(action.payload);

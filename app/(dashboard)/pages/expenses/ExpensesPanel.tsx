@@ -37,6 +37,7 @@ import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
 import { formatInr } from "@/utils/formatCurrency";
 import ExportButton from "@/app/components/Export/ExportButton";
+import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -108,6 +109,7 @@ export default function ExpensesPanel() {
   const [editingCategory, setEditingCategory] = useState<ExpenseCategory | null>(null);
   const [categorySubmitting, setCategorySubmitting] = useState(false);
   const [categoryForm] = Form.useForm<CategoryFormValues>();
+  const { setDirty, clearDirty, confirmNavigation } = useUnsavedChanges();
 
   const watchedExpenseType = Form.useWatch("expenseType", expenseForm);
   const isSalaryExpense =
@@ -256,11 +258,13 @@ export default function ExpensesPanel() {
   const openAddExpense = () => {
     setEditingExpense(null);
     setExpenseDrawerOpen(true);
+    clearDirty("expenses-expense-drawer");
   };
 
   const openEditExpense = (row: ExpenseRow) => {
     setEditingExpense(row);
     setExpenseDrawerOpen(true);
+    clearDirty("expenses-expense-drawer");
   };
 
   useEffect(() => {
@@ -314,6 +318,7 @@ export default function ExpensesPanel() {
         if (data.success) {
           message.success("Expense updated.");
           setExpenseDrawerOpen(false);
+          clearDirty("expenses-expense-drawer");
           void loadExpenses();
           void loadCategorySummary();
         } else if (data.message) {
@@ -324,6 +329,7 @@ export default function ExpensesPanel() {
         if (data.success) {
           message.success("Expense added.");
           setExpenseDrawerOpen(false);
+          clearDirty("expenses-expense-drawer");
           void loadExpenses();
           void loadCategorySummary();
         } else if (data.message) {
@@ -360,11 +366,13 @@ export default function ExpensesPanel() {
   const openAddCategory = () => {
     setEditingCategory(null);
     setCategoryDrawerOpen(true);
+    clearDirty("expenses-category-drawer");
   };
 
   const openEditCategory = (row: ExpenseCategory) => {
     setEditingCategory(row);
     setCategoryDrawerOpen(true);
+    clearDirty("expenses-category-drawer");
   };
 
   useEffect(() => {
@@ -390,6 +398,7 @@ export default function ExpensesPanel() {
         if (data.success) {
           message.success("Category updated.");
           setCategoryDrawerOpen(false);
+          clearDirty("expenses-category-drawer");
           void loadCategories();
         } else if (data.message) {
           message.error(data.message);
@@ -399,6 +408,7 @@ export default function ExpensesPanel() {
         if (data.success) {
           message.success("Category saved.");
           setCategoryDrawerOpen(false);
+          clearDirty("expenses-category-drawer");
           void loadCategories();
         } else if (data.message) {
           message.error(data.message);
@@ -759,18 +769,49 @@ export default function ExpensesPanel() {
         title={editingExpense ? "Edit expense" : "Add expense"}
         width={WIDE_DRAWER_WIDTH}
         open={expenseDrawerOpen}
-        onClose={() => setExpenseDrawerOpen(false)}
+        onClose={() => {
+          const close = () => {
+            setExpenseDrawerOpen(false);
+            clearDirty("expenses-expense-drawer");
+          };
+          if (expenseForm.isFieldsTouched(true)) {
+            confirmNavigation(close);
+            return;
+          }
+          close();
+        }}
         destroyOnHidden
         extra={
           <Space>
-            <Button onClick={() => setExpenseDrawerOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                const close = () => {
+                  setExpenseDrawerOpen(false);
+                  clearDirty("expenses-expense-drawer");
+                };
+                if (expenseForm.isFieldsTouched(true)) {
+                  confirmNavigation(close);
+                  return;
+                }
+                close();
+              }}
+            >
+              Cancel
+            </Button>
             <Button type="primary" loading={expenseSubmitting} onClick={() => void submitExpense()}>
               Save
             </Button>
           </Space>
         }
       >
-        <Form form={expenseForm} layout="vertical" requiredMark>
+        <Form
+          form={expenseForm}
+          layout="vertical"
+          requiredMark
+          onValuesChange={() => {
+            setDirty("expenses-expense-drawer", true);
+          }}
+        >
           <Form.Item
             name="expenseType"
             label="Expense Type"
@@ -849,18 +890,49 @@ export default function ExpensesPanel() {
         title={editingCategory ? "Edit category" : "Add category"}
         width={WIDE_DRAWER_WIDTH}
         open={categoryDrawerOpen}
-        onClose={() => setCategoryDrawerOpen(false)}
+        onClose={() => {
+          const close = () => {
+            setCategoryDrawerOpen(false);
+            clearDirty("expenses-category-drawer");
+          };
+          if (categoryForm.isFieldsTouched(true)) {
+            confirmNavigation(close);
+            return;
+          }
+          close();
+        }}
         destroyOnHidden
         extra={
           <Space>
-            <Button onClick={() => setCategoryDrawerOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                const close = () => {
+                  setCategoryDrawerOpen(false);
+                  clearDirty("expenses-category-drawer");
+                };
+                if (categoryForm.isFieldsTouched(true)) {
+                  confirmNavigation(close);
+                  return;
+                }
+                close();
+              }}
+            >
+              Cancel
+            </Button>
             <Button type="primary" loading={categorySubmitting} onClick={() => void submitCategory()}>
               {editingCategory ? "Save" : "Save"}
             </Button>
           </Space>
         }
       >
-        <Form form={categoryForm} layout="vertical" requiredMark>
+        <Form
+          form={categoryForm}
+          layout="vertical"
+          requiredMark
+          onValuesChange={() => {
+            setDirty("expenses-category-drawer", true);
+          }}
+        >
           <Form.Item
             name="name"
             label="Category Name"

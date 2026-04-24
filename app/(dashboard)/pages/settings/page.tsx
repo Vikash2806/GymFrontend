@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { App, Avatar, Button, Card, Form, Input, Space, Switch, Upload } from "antd";
 import { ShopOutlined, UploadOutlined } from "@ant-design/icons";
 import RbacPermissionGuard from "@/app/components/Auth/RbacPermissionGuard";
@@ -8,6 +8,7 @@ import { FEATURES, hasFeature } from "@/utils/permissions";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { selectSession, setSession, updateGymInSession } from "@/redux/features/auth/authSlice";
 import apiClient from "@/utils/api";
+import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
 
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -28,6 +29,13 @@ export default function SettingsPage() {
   const [form] = Form.useForm<{ gymName: string; supportPhone?: string }>();
   const [logoFile, setLogoFile] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const { setDirty, clearDirty } = useUnsavedChanges();
+
+  useEffect(() => {
+    return () => {
+      clearDirty("settings-page");
+    };
+  }, [clearDirty]);
 
   const saveGymProfile = async () => {
     if (!canEditGymProfile) {
@@ -46,6 +54,7 @@ export default function SettingsPage() {
       const me = await apiClient.get("/auth/me");
       dispatch(setSession(me.data));
       message.success("Gym profile updated.");
+      clearDirty("settings-page");
     } catch {
       message.error("Could not update gym profile.");
     } finally {
@@ -56,7 +65,15 @@ export default function SettingsPage() {
   return (
     <RbacPermissionGuard permission={FEATURES.SETTINGS}>
       <Card title="Gym Settings">
-        <Form key={gymName} form={form} layout="vertical" initialValues={{ gymName }}>
+        <Form
+          key={gymName}
+          form={form}
+          layout="vertical"
+          initialValues={{ gymName, supportPhone: "", renewalReminders: true }}
+          onValuesChange={() => {
+            setDirty("settings-page", true);
+          }}
+        >
           <Form.Item label="Gym name" name="gymName">
             <Input placeholder="Enter gym name" disabled={!canEditGymProfile} />
           </Form.Item>
@@ -78,6 +95,7 @@ export default function SettingsPage() {
                   try {
                     const dataUrl = await readFileAsDataUrl(file);
                     setLogoFile(dataUrl);
+                    setDirty("settings-page", true);
                   } catch {
                     message.error("Could not read file.");
                   }
@@ -90,17 +108,25 @@ export default function SettingsPage() {
               </Upload>
             </Space>
           </Form.Item>
-          <Form.Item label="Support phone">
+          <Form.Item label="Support phone" name="supportPhone">
             <Input placeholder="Enter support mobile number" />
           </Form.Item>
-          <Form.Item label="Enable renewal reminders">
-            <Switch defaultChecked />
+          <Form.Item label="Enable renewal reminders" name="renewalReminders" valuePropName="checked">
+            <Switch />
           </Form.Item>
           <Space>
             <Button type="primary" loading={saving} onClick={() => void saveGymProfile()} disabled={!canEditGymProfile}>
               Save changes
             </Button>
-            <Button onClick={() => form.resetFields()}>Reset</Button>
+            <Button
+              onClick={() => {
+                form.resetFields();
+                setLogoFile(null);
+                clearDirty("settings-page");
+              }}
+            >
+              Reset
+            </Button>
           </Space>
         </Form>
       </Card>

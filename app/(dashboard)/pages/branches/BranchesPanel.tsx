@@ -36,15 +36,18 @@ import apiClient from "@/utils/api";
 import { WIDE_MODAL_WIDTH } from "@/utils/modalWidths";
 import type { BranchRow, BranchesListResponse, BranchMutationResponse } from "@/types/branch";
 import { isValidIndianMobile, stripToIndianMobileDigits, toE164IndianMobile } from "@/utils/mobileValidation";
-import { TAMIL_NADU_CITIES_AND_DISTRICTS } from "@/utils/tamilNaduLocations";
+import { getCityOptions, getCountryOptions, getStateOptions } from "@/utils/options";
 import { useAppDispatch } from "@/redux/hooks";
 import { patchSessionToken, setSession } from "@/redux/features/auth/authSlice";
 import type { SessionPayload } from "@/redux/features/auth/sessionTypes";
 import ExportButton from "@/app/components/Export/ExportButton";
+import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
 
 const { Title, Text } = Typography;
-const DEFAULT_STATE = "Tamil Nadu";
-const DEFAULT_CITY = "Thanjavur";
+
+const DEFAULT_COUNTRY_CODE = "IN";
+const DEFAULT_STATE_CODE = "TN";
+const DEFAULT_CITY_CODE = "TN_TNJ";
 
 type FormValues = {
   name: string;
@@ -59,14 +62,62 @@ type FormValues = {
   status: "active" | "inactive";
 };
 
-function formatAddress(a: BranchRow["address"]): string {
-  const line = [a.line1, a.line2].filter(Boolean).join(", ");
-  return [line, a.city, a.state, a.pincode, a.country].filter(Boolean).join(", ");
+function resolveOptionLabel(options: Array<{ value: string; label: string }>, rawValue: string | undefined): string {
+  const normalized = String(rawValue ?? "").trim();
+  if (!normalized) {
+    return "";
+  }
+  const direct = options.find((option) => option.value === normalized);
+  if (direct) {
+    return direct.label;
+  }
+  const byLabel = options.find((option) => option.label.toLowerCase() === normalized.toLowerCase());
+  return byLabel?.label ?? normalized;
+}
+
+function toOptionValue(options: Array<{ value: string; label: string }>, rawValue: string | undefined, fallback: string): string {
+  const normalized = String(rawValue ?? "").trim();
+  if (!normalized) {
+    return fallback;
+  }
+  const direct = options.find((option) => option.value === normalized);
+  if (direct) {
+    return direct.value;
+  }
+  const byLabel = options.find((option) => option.label.toLowerCase() === normalized.toLowerCase());
+  return byLabel?.value ?? fallback;
 }
 
 async function refreshSession(dispatch: ReturnType<typeof useAppDispatch>) {
   const { data } = await apiClient.get<SessionPayload>("/auth/me");
   dispatch(setSession(data));
+}
+
+function extractApiErrorMessage(error: unknown): string | null {
+  if (!(error && typeof error === "object" && "response" in error)) {
+    return null;
+  }
+  const payload = (error as { response?: { data?: { message?: unknown; errors?: unknown } } }).response?.data;
+  const msg = payload?.message;
+  if (typeof msg === "string" && msg.trim()) {
+    return msg;
+  }
+  if (Array.isArray(payload?.errors)) {
+    const firstError = payload.errors[0];
+    if (typeof firstError === "string" && firstError.trim()) {
+      return firstError;
+    }
+    if (
+      firstError &&
+      typeof firstError === "object" &&
+      "message" in firstError &&
+      typeof (firstError as { message?: unknown }).message === "string" &&
+      (firstError as { message: string }).message.trim()
+    ) {
+      return (firstError as { message: string }).message;
+    }
+  }
+  return null;
 }
 
 export default function BranchesPanel() {
@@ -85,16 +136,44 @@ export default function BranchesPanel() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<BranchRow | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const watchedCity = Form.useWatch("city", form);
+  const [modalDirty, setModalDirty] = useState(false);
+  const { setDirty, clearDirty, confirmNavigation } = useUnsavedChanges();
+  const countryOptions = useMemo(() => getCountryOptions("en", "code"), []);
+  const stateOptions = useMemo(
+    () => getStateOptions("en", DEFAULT_COUNTRY_CODE, "code"),
+    []
+  );
+  const cityOptions = useMemo(
+    () => getCityOptions("en", DEFAULT_STATE_CODE, DEFAULT_COUNTRY_CODE, "code"),
+    []
+  );
+  const sectionTitleStyle: React.CSSProperties = { marginBottom: 12 };
+  const sectionCardStyle: React.CSSProperties = {
+    backgroundColor: token.colorBgLayout,
+    borderRadius: 10,
+    padding: 16,
+    marginBottom: 16
+  };
+  const formatAddressForDisplay = useCallback((a: BranchRow["address"]): string => {
+    const countryCode = String(a.country ?? "").trim();
+    const stateCode = String(a.state ?? "").trim();
+    const cityCode = String(a.city ?? "").trim();
+    const normalizedCountryCode = countryCode || DEFAULT_COUNTRY_CODE;
+    const normalizedStateCode = stateCode || DEFAULT_STATE_CODE;
 
-  const cityOptions = useMemo(() => {
-    const base = [...TAMIL_NADU_CITIES_AND_DISTRICTS];
-    const current = String(watchedCity ?? "").trim();
-    if (current && !base.some((item) => item.toLowerCase() === current.toLowerCase())) {
-      base.unshift(current);
-    }
-    return base.map((city) => ({ value: city, label: city }));
-  }, [watchedCity]);
+    const countryLabel = resolveOptionLabel(getCountryOptions("en", "code"), countryCode);
+    const stateLabel = resolveOptionLabel(
+      getStateOptions("en", normalizedCountryCode, "code"),
+      stateCode
+    );
+    const cityLabel = resolveOptionLabel(
+      getCityOptions("en", normalizedStateCode, normalizedCountryCode, "code"),
+      cityCode
+    );
+
+    const line = [a.line1, a.line2].filter(Boolean).join(", ");
+    return [line, cityLabel, stateLabel, a.pincode, countryLabel].filter(Boolean).join(", ");
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -130,24 +209,28 @@ export default function BranchesPanel() {
         name: editing.name,
         line1: editing.address.line1,
         line2: editing.address.line2 || undefined,
-        country: editing.address.country || "India",
-        state: DEFAULT_STATE,
-        city: editing.address.city,
+        country: toOptionValue(countryOptions, editing.address.country, DEFAULT_COUNTRY_CODE),
+        state: toOptionValue(stateOptions, editing.address.state, DEFAULT_STATE_CODE),
+        city: toOptionValue(cityOptions, editing.address.city, DEFAULT_CITY_CODE),
         pincode: editing.address.pincode,
         phone: stripToIndianMobileDigits(editing.contact.phone),
         email: editing.contact.email ?? undefined,
         status: editing.status
       });
+      setModalDirty(false);
+      clearDirty("branches-modal");
     } else {
       form.resetFields();
       form.setFieldsValue({
-        country: "India",
-        state: DEFAULT_STATE,
-        city: DEFAULT_CITY,
+        country: DEFAULT_COUNTRY_CODE,
+        state: DEFAULT_STATE_CODE,
+        city: DEFAULT_CITY_CODE,
         status: "active"
       });
+      setModalDirty(false);
+      clearDirty("branches-modal");
     }
-  }, [modalOpen, editing, form]);
+  }, [modalOpen, editing, form, clearDirty]);
 
   const openCreate = () => {
     setEditing(null);
@@ -173,7 +256,7 @@ export default function BranchesPanel() {
           line1: values.line1.trim(),
           line2: (values.line2 ?? "").trim(),
           country: values.country.trim(),
-          state: DEFAULT_STATE,
+          state: values.state.trim(),
           city: values.city.trim(),
           pincode: (values.pincode ?? "").trim()
         },
@@ -205,12 +288,14 @@ export default function BranchesPanel() {
       }
       setModalOpen(false);
       setEditing(null);
+      setModalDirty(false);
+      clearDirty("branches-modal");
       await load();
     } catch (e) {
       if (e && typeof e === "object" && "errorFields" in (e as object)) {
         return;
       }
-      message.error("Request failed.");
+      message.error(extractApiErrorMessage(e) ?? "Request failed.");
     } finally {
       setSubmitting(false);
     }
@@ -265,7 +350,7 @@ export default function BranchesPanel() {
       render: (_, record) => (
         <Space align="start">
           <EnvironmentOutlined style={{ color: token.colorTextSecondary, marginTop: 2 }} />
-          <Text>{formatAddress(record.address)}</Text>
+          <Text>{formatAddressForDisplay(record.address)}</Text>
         </Space>
       )
     },
@@ -281,14 +366,19 @@ export default function BranchesPanel() {
     },
     {
       title: "Manager",
-      key: "manager",
+      key: "managers",
       render: (_, record) =>
-        record.manager ? (
+        record.managers.length > 0 ? (
           <Space direction="vertical" size={0}>
-            <Text>{record.manager.fullName}</Text>
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              {record.manager.status === "active" ? "Active" : "Inactive"}
-            </Text>
+            {record.managers.map((manager) => (
+              <Text key={manager.id}>
+                {manager.fullName}
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {" "}
+                  ({manager.status === "active" ? "Active" : "Inactive"})
+                </Text>
+              </Text>
+            ))}
           </Space>
         ) : (
           <Text type="secondary">Not Assigned</Text>
@@ -348,9 +438,9 @@ export default function BranchesPanel() {
           </Title>
           <Space wrap>
             <ExportButton endpoint="/gym/exports/branches" defaultFilename="branches.csv" />
-            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+            {/* <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
               Add Branch
-            </Button>
+            </Button> */}
           </Space>
         </Flex>
 
@@ -416,16 +506,34 @@ export default function BranchesPanel() {
         }
         open={modalOpen}
         onCancel={() => {
-          setModalOpen(false);
-          setEditing(null);
+          const closeModal = () => {
+            setModalOpen(false);
+            setEditing(null);
+            setModalDirty(false);
+            clearDirty("branches-modal");
+          };
+          if (modalDirty) {
+            confirmNavigation(closeModal);
+            return;
+          }
+          closeModal();
         }}
         destroyOnHidden
         footer={[
           <Button
             key="cancel"
             onClick={() => {
-              setModalOpen(false);
-              setEditing(null);
+              const closeModal = () => {
+                setModalOpen(false);
+                setEditing(null);
+                setModalDirty(false);
+                clearDirty("branches-modal");
+              };
+              if (modalDirty) {
+                confirmNavigation(closeModal);
+                return;
+              }
+              closeModal();
             }}
           >
             Cancel
@@ -436,106 +544,123 @@ export default function BranchesPanel() {
         ]}
         width={WIDE_MODAL_WIDTH}
       >
-        <Form form={form} layout="vertical" requiredMark style={{ marginTop: 8 }}>
-          <Form.Item name="name" label="Branch Name" rules={[{ required: true, message: "Required" }]}>
-            <Input placeholder="Branch name" allowClear />
-          </Form.Item>
-
-          <Divider plain>Address</Divider>
-
-          <Form.Item name="line1" label="Street" rules={[{ required: true, message: "Required" }]}>
-            <Input placeholder="Street address" allowClear />
-          </Form.Item>
-
-          <Row gutter={16}>
-            <Col span={24}>
-              <Form.Item name="country" label="Country" rules={[{ required: true, message: "Required" }]}>
-                <Select
-                  showSearch
-                  optionFilterProp="label"
-                  options={[{ value: "India", label: "India" }]}
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item name="state" label="State" rules={[{ required: true, message: "Required" }]}>
-                <Input readOnly value={DEFAULT_STATE} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item name="city" label="City" rules={[{ required: true, message: "Required" }]}>
-                <Select
-                  showSearch
-                  optionFilterProp="label"
-                  placeholder="Select city / district"
-                  options={cityOptions}
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item name="pincode" label="Zip / Pin Code (optional)">
-                <Input placeholder="Pin code" allowClear />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Form.Item name="line2" label="Address line 2 (optional)">
-            <Input placeholder="Apartment, suite, etc." allowClear />
-          </Form.Item>
-
-          <Divider plain>Contact</Divider>
-
-          <Form.Item
-            label="Phone"
-            extra="Indian mobile (+91)"
-          >
-            <Space.Compact style={{ width: "100%" }}>
-              <Input
-                readOnly
-                tabIndex={-1}
-                value="+91"
-                style={{ width: 64, textAlign: "center" }}
-                aria-label="Country code India"
+        <Form
+          form={form}
+          layout="vertical"
+          requiredMark
+          style={{ marginTop: 8 }}
+          onValuesChange={() => {
+            setModalDirty(true);
+            setDirty("branches-modal", true);
+          }}
+        >
+          <Title level={5} style={sectionTitleStyle}>Basic details</Title>
+          <div style={sectionCardStyle}>
+            <Form.Item name="name" label="Branch Name" rules={[{ required: true, message: "Required" }]}>
+              <Input placeholder="Branch name" allowClear />
+            </Form.Item>
+            <Form.Item name="status" label="Status" rules={[{ required: true }]}>
+              <Select
+                options={[
+                  { value: "active", label: "Active" },
+                  { value: "inactive", label: "Inactive" }
+                ]}
               />
-              <Form.Item
-                name="phone"
-                noStyle
-                getValueFromEvent={(e) => stripToIndianMobileDigits(e.target?.value ?? e)}
-                rules={[
-                  { required: true, message: "Required" },
-                  {
-                    validator: async (_, value) => {
-                      const digits = stripToIndianMobileDigits(value);
-                      if (!isValidIndianMobile(digits)) {
-                        throw new Error("Enter a valid 10-digit Indian mobile number");
+            </Form.Item>
+          </div>
+
+          <Title level={5} style={sectionTitleStyle}>Address</Title>
+          <div style={sectionCardStyle}>
+            <Form.Item name="line1" label="Street" rules={[{ required: false, message: "Required" }]}>
+              <Input placeholder="Street address" allowClear />
+            </Form.Item>
+
+            <Row gutter={16}>
+              <Col span={24}>
+                <Form.Item name="country" label="Country" rules={[{ required: true, message: "Required" }]}>
+                  <Select
+                    showSearch
+                    optionFilterProp="label"
+                    options={countryOptions}
+                  />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={12}>
+                <Form.Item name="state" label="State" rules={[{ required: true, message: "Required" }]}>
+                  <Select
+                    showSearch
+                    optionFilterProp="label"
+                    options={stateOptions}
+                  />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={12}>
+                <Form.Item name="city" label="City" rules={[{ required: true, message: "Required" }]}>
+                  <Select
+                    showSearch
+                    optionFilterProp="label"
+                    placeholder="Select city / district"
+                    options={cityOptions}
+                  />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={12}>
+                <Form.Item name="pincode" label="Zip / Pin Code (optional)">
+                  <Input placeholder="Pin code" allowClear />
+                </Form.Item>
+              </Col>
+            </Row>
+
+            <Form.Item name="line2" label="Address line 2 (optional)" style={{ marginBottom: 0 }}>
+              <Input placeholder="Apartment, suite, etc." allowClear />
+            </Form.Item>
+          </div>
+
+          <Title level={5} style={sectionTitleStyle}>Contact</Title>
+          <div style={sectionCardStyle}>
+            <Form.Item
+              label="Phone"
+              extra="Indian mobile (+91)"
+            >
+              <Space.Compact style={{ width: "100%" }}>
+                <Input
+                  readOnly
+                  tabIndex={-1}
+                  value="+91"
+                  style={{ width: 64, textAlign: "center" }}
+                  aria-label="Country code India"
+                />
+                <Form.Item
+                  name="phone"
+                  noStyle
+                  getValueFromEvent={(e) => stripToIndianMobileDigits(e.target?.value ?? e)}
+                  rules={[
+                    { required: true, message: "Required" },
+                    {
+                      validator: async (_, value) => {
+                        const digits = stripToIndianMobileDigits(value);
+                        if (!isValidIndianMobile(digits)) {
+                          throw new Error("Enter a valid 10-digit Indian mobile number");
+                        }
                       }
                     }
-                  }
-                ]}
-              >
-                <Input
-                  maxLength={10}
-                  inputMode="numeric"
-                  placeholder="Enter 10 Digit Mobile Number"
-                  allowClear
-                  style={{ width: "calc(100% - 64px)" }}
-                />
-              </Form.Item>
-            </Space.Compact>
-          </Form.Item>
+                  ]}
+                >
+                  <Input
+                    maxLength={10}
+                    inputMode="numeric"
+                    placeholder="Enter 10 Digit Mobile Number"
+                    allowClear
+                    style={{ width: "calc(100% - 64px)" }}
+                  />
+                </Form.Item>
+              </Space.Compact>
+            </Form.Item>
 
-          <Form.Item name="email" label="Email (optional)">
-            <Input type="email" placeholder="branch@example.com" allowClear />
-          </Form.Item>
-
-          <Form.Item name="status" label="Status" rules={[{ required: true }]}>
-            <Select
-              options={[
-                { value: "active", label: "Active" },
-                { value: "inactive", label: "Inactive" }
-              ]}
-            />
-          </Form.Item>
+            <Form.Item name="email" label="Email (optional)" style={{ marginBottom: 0 }}>
+              <Input type="email" placeholder="branch@example.com" allowClear />
+            </Form.Item>
+          </div>
         </Form>
       </Modal>
     </div>

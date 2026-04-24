@@ -194,10 +194,10 @@ const Navbar = () => {
           <Btn variant="ghost" size="sm" href="/login">
             Log in
           </Btn>
-          <Btn size="sm" className="group" style={glowPrimary} href="/signup">
+          {/* <Btn size="sm" className="group" style={glowPrimary} href="/signup">
             Start Free Trial
             <ArrowRight className="w-4 h-4 ml-1 group-hover:translate-x-0.5 transition-transform" />
-          </Btn>
+          </Btn> */}
         </div>
         <button
           type="button"
@@ -232,9 +232,9 @@ const Navbar = () => {
                 <Btn variant="outline" className="w-full" href="/login">
                   Log in
                 </Btn>
-                <Btn className="w-full" style={glowPrimary} href="/signup">
+                {/* <Btn className="w-full" style={glowPrimary} href="/signup">
                   Start Free Trial
-                </Btn>
+                </Btn> */}
               </div>
             </div>
           </motion.div>
@@ -273,7 +273,7 @@ const Hero = () => (
             matters.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start mb-12">
-            <Btn
+            {/* <Btn
               size="lg"
               className="text-base font-semibold group"
               style={glowPrimary}
@@ -281,7 +281,7 @@ const Hero = () => (
             >
               Start Free Trial
               <ArrowRight className="w-5 h-5 ml-1 group-hover:translate-x-1 transition-transform" />
-            </Btn>
+            </Btn> */}
           </div>
           <div className="flex flex-wrap gap-6 justify-center lg:justify-start">
             {[
@@ -1514,7 +1514,7 @@ const CTA = () => (
           with FitForge. Your first 14 days are completely free.
         </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
-          <Btn
+          {/* <Btn
             size="lg"
             className="text-base font-semibold group"
             style={glowPrimary}
@@ -1522,7 +1522,7 @@ const CTA = () => (
           >
             Start Free Trial
             <ArrowRight className="w-5 h-5 ml-1 group-hover:translate-x-1 transition-transform" />
-          </Btn>
+          </Btn> */}
         </div>
         <p className="text-xs text-muted-foreground mt-6">
           No credit card required · Setup in under 24 hours · Cancel anytime
@@ -1622,14 +1622,14 @@ const StickyCtaBar = () => {
           className="fixed bottom-0 left-0 right-0 z-40 border-t border-border/50 py-3 px-4 md:hidden"
           style={glassStyle}
         >
-          <Btn
+          {/* <Btn
             className="w-full h-12 font-semibold group"
             style={glowPrimary}
             href="/signup"
           >
             Start Free Trial
             <ArrowRight className="w-4 h-4 ml-1 group-hover:translate-x-0.5 transition-transform" />
-          </Btn>
+          </Btn> */}
         </motion.div>
       )}
     </AnimatePresence>

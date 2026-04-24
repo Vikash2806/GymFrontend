@@ -39,6 +39,7 @@ import apiClient from "@/utils/api";
 import { WIDE_MODAL_WIDTH } from "@/utils/modalWidths";
 import type { SessionGymBranch, SessionPayload } from "@/redux/features/auth/sessionTypes";
 import { FEATURES, hasFeature } from "@/utils/permissions";
+import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
 
 const { Header } = Layout;
 const { Text } = Typography;
@@ -90,17 +91,6 @@ interface CustomAppBarProps {
   onHeightChange: (height: number) => void;
 }
 
-const dashboardPrefetchRoutes = [
-  "/pages/dashboard",
-  "/pages/members",
-  "/pages/billing",
-  "/pages/branches",
-  "/pages/staff-manager",
-  "/pages/finance",
-  "/pages/expenses",
-  "/pages/settings"
-] as const;
-
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -127,6 +117,7 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
   const [gymForm] = Form.useForm<{ name: string }>();
   const [logoFile, setLogoFile] = useState<string | null>(null);
   const [savingGym, setSavingGym] = useState(false);
+  const { setDirty, clearDirty, confirmNavigation } = useUnsavedChanges();
 
   const gym = session?.gym;
   const activeBranch = session?.activeBranch;
@@ -178,25 +169,23 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
     }
   }, [onHeightChange]);
 
-  useEffect(() => {
-    for (const route of dashboardPrefetchRoutes) {
-      router.prefetch(route);
-    }
-  }, [router]);
-
   const onProfileMenuClick: MenuProps["onClick"] = async ({ key }) => {
     if (key === "settings") {
       if (!canOpenSettings) {
         return;
       }
       if (pathname !== "/pages/settings") {
-        router.push("/pages/settings");
+        confirmNavigation(() => router.push("/pages/settings"));
       }
       return;
     }
     if (key === "logout") {
-      await dispatch(logoutAsync());
-      router.push("/login");
+      confirmNavigation(() => {
+        void (async () => {
+          await dispatch(logoutAsync());
+          router.push("/login");
+        })();
+      });
     }
   };
 
@@ -241,6 +230,7 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
       await refreshSession(dispatch);
       message.success("Gym updated");
       setGymModalOpen(false);
+      clearDirty("appbar-gym-modal");
     } catch {
       message.error("Could not update gym.");
     } finally {
@@ -439,7 +429,7 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
                 return;
               }
               if (pathname !== "/pages/settings") {
-                router.push("/pages/settings");
+                confirmNavigation(() => router.push("/pages/settings"));
               }
             }}
             disabled={!canOpenSettings}
@@ -461,20 +451,35 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
         open={gymModalOpen}
         onOk={saveGym}
         onCancel={() => {
-          setGymModalOpen(false);
-          setLogoFile(null);
+          const closeModal = () => {
+            setGymModalOpen(false);
+            setLogoFile(null);
+            clearDirty("appbar-gym-modal");
+          };
+          if (gymForm.isFieldsTouched(true) || Boolean(logoFile)) {
+            confirmNavigation(closeModal);
+            return;
+          }
+          closeModal();
         }}
         afterOpenChange={(open) => {
           if (open && gym) {
             gymForm.setFieldsValue({ name: gym.name });
             setLogoFile(null);
+            clearDirty("appbar-gym-modal");
           }
         }}
         confirmLoading={savingGym}
         destroyOnHidden
         width={WIDE_MODAL_WIDTH}
       >
-        <Form form={gymForm} layout="vertical">
+        <Form
+          form={gymForm}
+          layout="vertical"
+          onValuesChange={() => {
+            setDirty("appbar-gym-modal", true);
+          }}
+        >
           <Form.Item name="name" label="Gym name" rules={[{ required: true, message: "Enter gym name" }]}>
             <Input prefix={<ShopOutlined />} disabled={!canEditGymProfile} />
           </Form.Item>
@@ -487,6 +492,7 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
                 try {
                   const dataUrl = await readFileAsDataUrl(file);
                   setLogoFile(dataUrl);
+                  setDirty("appbar-gym-modal", true);
                 } catch {
                   message.error("Could not read file");
                 }
