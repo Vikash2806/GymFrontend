@@ -2,6 +2,9 @@ export type ExpenseCategory = {
   id: string;
   name: string;
   description: string;
+  showEmployeeDetails?: boolean;
+  listBranchUsers?: boolean;
+  mandatory?: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -11,13 +14,7 @@ export type ExpenseRow = {
   gymId: string;
   branchId: string | null;
   branchName: string | null;
-  expenseType:
-    | "employee_salary"
-    | "equipment_repair"
-    | "sanitary_worker_salary"
-    | "gym_rent"
-    | "food_expense"
-    | "custom";
+  expenseType: "custom";
   expenseTypeLabel?: string;
   employeeUserId?: string | null;
   employeeName?: string | null;
@@ -82,4 +79,5 @@ export type ExpenseEmployeesResponse = {
   success: boolean;
   message?: string;
   staffUsers?: ExpenseEmployeeOption[];
+  employees?: ExpenseEmployeeOption[];
 };

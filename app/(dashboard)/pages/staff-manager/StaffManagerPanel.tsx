@@ -34,6 +34,7 @@ import type { StaffUserMutationResponse, StaffUserRow, StaffUsersListResponse } 
 import { useRouter } from "next/navigation";
 import ExportButton from "@/app/components/Export/ExportButton";
 import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
+import StaffUserDetailsModal from "./StaffUserDetailsModal";
 
 const { Title, Text } = Typography;
 
@@ -140,6 +141,8 @@ export default function StaffManagerPanel() {
   const [submitting, setSubmitting] = useState(false);
   const [modalDirty, setModalDirty] = useState(false);
   const [form] = Form.useForm<FormValues>();
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsUserId, setDetailsUserId] = useState<string | null>(null);
   const { setDirty, clearDirty, confirmNavigation } = useUnsavedChanges();
 
   const canAccess = canAccessStaffUsersModule(session);
@@ -405,10 +408,20 @@ export default function StaffManagerPanel() {
     {
       title: "Actions",
       key: "actions",
-      width: 120,
+      width: 180,
       fixed: "right",
       render: (_, record) => (
         <Space>
+          <Button
+            type="link"
+            size="small"
+            onClick={() => {
+              setDetailsUserId(record.id);
+              setDetailsOpen(true);
+            }}
+          >
+            View Details
+          </Button>
           <Button
             type="link"
             size="small"
@@ -673,6 +686,14 @@ export default function StaffManagerPanel() {
           ) : null}
         </Form>
       </Modal>
+      <StaffUserDetailsModal
+        open={detailsOpen}
+        userId={detailsUserId}
+        onClose={() => {
+          setDetailsOpen(false);
+          setDetailsUserId(null);
+        }}
+      />
     </Card>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { App, Button, Dropdown, Space } from "antd";
+import { App, Button, Dropdown } from "antd";
 import { DownOutlined, DownloadOutlined } from "@ant-design/icons";
 import apiClient from "@/utils/api";
 
@@ -54,7 +54,6 @@ export default function ExportButton({
 }: ExportButtonProps) {
   const { message } = App.useApp();
   const [loading, setLoading] = useState(false);
-  const [format, setFormat] = useState<ExportFormat>("csv");
 
   const runExport = async (selectedFormat: ExportFormat) => {
     setLoading(true);
@@ -109,29 +108,24 @@ export default function ExportButton({
   };
 
   return (
-    <Space.Compact>
+    <Dropdown
+      menu={{
+        items: [
+          { key: "csv", label: "CSV" },
+          { key: "xlsx", label: "Excel (.xlsx)" }
+        ],
+        onClick: ({ key }) => void runExport(key as ExportFormat)
+      }}
+      trigger={["click"]}
+      disabled={disabled || loading}
+    >
       <Button
         icon={<DownloadOutlined />}
         loading={loading}
-        onClick={() => void runExport(format)}
         disabled={disabled}
       >
-        {label} ({format.toUpperCase()})
+        {label} <DownOutlined />
       </Button>
-      <Dropdown
-        menu={{
-          items: [
-            { key: "csv", label: "CSV" },
-            { key: "xlsx", label: "Excel (.xlsx)" }
-          ],
-          onClick: ({ key }) => setFormat(key as ExportFormat)
-        }}
-        trigger={["click"]}
-      >
-        <Button disabled={disabled}>
-          <DownOutlined />
-        </Button>
-      </Dropdown>
-    </Space.Compact>
+    </Dropdown>
   );
 }

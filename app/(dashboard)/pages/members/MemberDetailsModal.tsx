@@ -136,6 +136,55 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
     ],
     [token.colorError, token.colorSuccess]
   );
+  const historyColumns: ColumnsType<SubscriptionHistoryItem> = useMemo(
+    () => [
+      {
+        title: "Plan",
+        key: "planName",
+        dataIndex: "planName",
+        render: (value: string) => value || "—"
+      },
+      {
+        title: "Start Date",
+        key: "startDate",
+        dataIndex: "startDate",
+        render: (value: string) => formatDisplayDate(value)
+      },
+      {
+        title: "End Date",
+        key: "endDate",
+        dataIndex: "endDate",
+        render: (value: string) => formatDisplayDate(value)
+      },
+      {
+        title: "Paid",
+        key: "paidAmount",
+        align: "right",
+        render: (_, row) => formatInrWhole(row.paymentSummary?.paidAmount ?? 0)
+      },
+      {
+        title: "Pending",
+        key: "pendingAmount",
+        align: "right",
+        render: (_, row) => formatInrWhole(row.paymentSummary?.pendingAmount ?? 0)
+      },
+      {
+        title: "Status",
+        key: "status",
+        dataIndex: "status",
+        render: (value: SubscriptionHistoryItem["status"]) => (
+          <Tag
+            color={
+              value === "active" ? "success" : value === "cancelled" ? "error" : value === "expired" ? "orange" : "default"
+            }
+          >
+            {value.toUpperCase()}
+          </Tag>
+        )
+      }
+    ],
+    []
+  );
 
   useEffect(() => {
     if (!open) {
@@ -321,44 +370,14 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
                       <Text type="secondary">No membership history found.</Text>
                     ) : (
                       <>
-                        <Space direction="vertical" style={{ width: "100%" }} size={8}>
-                          {membershipHistory.map((sub) => (
-                            <div
-                              key={sub._id}
-                              style={{
-                                border: `1px solid ${token.colorBorderSecondary}`,
-                                borderRadius: 8,
-                                padding: "8px 12px"
-                              }}
-                            >
-                              <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                                <Text strong>{sub.planName}</Text>
-                                <Tag
-                                  color={
-                                    sub.status === "active"
-                                      ? "success"
-                                      : sub.status === "cancelled"
-                                        ? "error"
-                                        : sub.status === "expired"
-                                          ? "orange"
-                                          : "default"
-                                  }
-                                >
-                                  {sub.status.toUpperCase()}
-                                </Tag>
-                              </Space>
-                              <Text type="secondary" style={{ fontSize: 12 }}>
-                                {formatDisplayDate(sub.startDate)} - {formatDisplayDate(sub.endDate)}
-                              </Text>
-                              <div>
-                                <Text style={{ fontSize: 12 }}>
-                                  Paid: {formatInrWhole(sub.paymentSummary.paidAmount)} | Pending:{" "}
-                                  {formatInrWhole(sub.paymentSummary.pendingAmount)}
-                                </Text>
-                              </div>
-                            </div>
-                          ))}
-                        </Space>
+                        <Table<SubscriptionHistoryItem>
+                          rowKey="_id"
+                          size="small"
+                          columns={historyColumns}
+                          dataSource={membershipHistory}
+                          pagination={false}
+                          scroll={{ x: 760 }}
+                        />
                         <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
                           <Pagination
                             size="small"

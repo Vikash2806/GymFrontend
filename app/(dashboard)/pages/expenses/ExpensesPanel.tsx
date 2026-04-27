@@ -4,21 +4,23 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   App,
   Button,
+  Checkbox,
   DatePicker,
   Drawer,
+  Dropdown,
   Empty,
   Form,
   Input,
   InputNumber,
-  Popconfirm,
   Select,
   Space,
   Table,
   Tabs,
-  Typography
+  Typography,
+  theme
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
+import { FilterOutlined, PlusOutlined } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
 import apiClient from "@/utils/api";
 import { WIDE_DRAWER_WIDTH } from "@/utils/modalWidths";
@@ -38,31 +40,17 @@ import { selectSession } from "@/redux/features/auth/authSlice";
 import { formatInr } from "@/utils/formatCurrency";
 import ExportButton from "@/app/components/Export/ExportButton";
 import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
+import ExpensesFilterModal, { type ExpenseFilters } from "./ExpensesFilterModal";
 
 const { Title, Text } = Typography;
-const { RangePicker } = DatePicker;
+const FILTER_STORAGE_KEY = "expenseFilters";
+const GENERAL_EMPLOYEE_OPTION_VALUE = "__general__";
 
-type ExpenseType =
-  | "employee_salary"
-  | "equipment_repair"
-  | "sanitary_worker_salary"
-  | "gym_rent"
-  | "food_expense"
-  | "custom";
-type SalaryFilter = "all" | "salary_only" | "employee_salary" | "sanitary_worker_salary";
-
-const EXPENSE_TYPE_OPTIONS: Array<{ value: ExpenseType; label: string }> = [
-  { value: "employee_salary", label: "Employee Salary" },
-  { value: "equipment_repair", label: "Equipment Repair" },
-  { value: "sanitary_worker_salary", label: "Sanitary Worker Salary" },
-  { value: "gym_rent", label: "Gym Rent" },
-  { value: "food_expense", label: "Food Expense" },
-  { value: "custom", label: "Custom Category" }
-];
+type ExpenseTableColumnKey = "date" | "amount" | "expenseType" | "branch" | "employee" | "category" | "notes" | "actions";
 
 type ExpenseFormValues = {
-  expenseType: ExpenseType;
   employeeUserId?: string;
+  employeeName?: string;
   amount: number;
   date: Dayjs;
   categoryId?: string;
@@ -75,22 +63,44 @@ type CategoryFormValues = {
 };
 
 export default function ExpensesPanel() {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
+  const { token } = theme.useToken();
   const session = useAppSelector(selectSession);
   const defaultBranchId = session?.activeBranch?.id ?? session?.user?.defaults?.branchId ?? "";
 
   const [activeTab, setActiveTab] = useState("expenses");
-  const [dateRange, setDateRange] = useState<[Dayjs, Dayjs]>(() => [dayjs().startOf("month"), dayjs().endOf("month")]);
-  const [expenseTypeFilter, setExpenseTypeFilter] = useState<"all" | ExpenseType>("all");
-  const [salaryFilter, setSalaryFilter] = useState<SalaryFilter>("all");
-  const [categoryFilter, setCategoryFilter] = useState<string>("");
-  const [employeeFilter, setEmployeeFilter] = useState<string>("");
+  const initialFilters: ExpenseFilters = useMemo(
+    () => ({
+      search: "",
+      categoryId: "",
+      employeeUserId: "",
+      expenseKind: "all",
+      dateRange: [dayjs().startOf("month"), dayjs().endOf("month")],
+      minAmount: null,
+      maxAmount: null
+    }),
+    []
+  );
+  const [filters, setFilters] = useState<ExpenseFilters>(initialFilters);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [activeFilters, setActiveFilters] = useState(0);
+  const [filtersHydrated, setFiltersHydrated] = useState(false);
 
   const [expensesLoading, setExpensesLoading] = useState(false);
   const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
   const [expensesPage, setExpensesPage] = useState(1);
   const [expensesPageSize, setExpensesPageSize] = useState(10);
   const [expensesTotal, setExpensesTotal] = useState(0);
+  const [visibleExpenseColumnKeys, setVisibleExpenseColumnKeys] = useState<ExpenseTableColumnKey[]>([
+    "date",
+    "amount",
+    "expenseType",
+    "branch",
+    "employee",
+    "category",
+    "notes",
+    "actions"
+  ]);
 
   const [categoriesLoading, setCategoriesLoading] = useState(false);
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
@@ -99,10 +109,14 @@ export default function ExpensesPanel() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryRows, setSummaryRows] = useState<ExpenseCategorySummaryRow[]>([]);
   const [summaryTotal, setSummaryTotal] = useState(0);
+  const [summaryPage, setSummaryPage] = useState(1);
+  const [summaryPageSize, setSummaryPageSize] = useState(10);
 
   const [expenseDrawerOpen, setExpenseDrawerOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<ExpenseRow | null>(null);
   const [expenseSubmitting, setExpenseSubmitting] = useState(false);
+  const [returnToExpenseDrawer, setReturnToExpenseDrawer] = useState(false);
+  const [newlyCreatedCategoryId, setNewlyCreatedCategoryId] = useState<string | null>(null);
   const [expenseForm] = Form.useForm<ExpenseFormValues>();
 
   const [categoryDrawerOpen, setCategoryDrawerOpen] = useState(false);
@@ -111,10 +125,17 @@ export default function ExpensesPanel() {
   const [categoryForm] = Form.useForm<CategoryFormValues>();
   const { setDirty, clearDirty, confirmNavigation } = useUnsavedChanges();
 
-  const watchedExpenseType = Form.useWatch("expenseType", expenseForm);
-  const isSalaryExpense =
-    watchedExpenseType === "employee_salary" || watchedExpenseType === "sanitary_worker_salary";
-  const isCustomExpense = watchedExpenseType === "custom";
+  const watchedCategoryId = Form.useWatch("categoryId", expenseForm);
+  const [showEmployeeDetailsToggle, setShowEmployeeDetailsToggle] = useState(false);
+  const [listBranchUsersToggle, setListBranchUsersToggle] = useState(false);
+  const [mandatoryUserToggle, setMandatoryUserToggle] = useState(false);
+  const selectedCategory = useMemo(
+    () => categories.find((category) => category.id === watchedCategoryId) ?? null,
+    [categories, watchedCategoryId]
+  );
+  const showEmployeeSection = selectedCategory?.showEmployeeDetails === true;
+  const useBranchUserSelection = selectedCategory?.showEmployeeDetails === true && selectedCategory?.listBranchUsers === true;
+  const isEmployeeDetailsMandatory = selectedCategory?.showEmployeeDetails === true && selectedCategory?.mandatory === true;
 
   const categoryOptions = useMemo(
     () => categories.map((c) => ({ value: c.id, label: c.name })),
@@ -128,8 +149,8 @@ export default function ExpensesPanel() {
   const buildExpenseQueryParams = useCallback(
     (forExport = false) => {
       const params: Record<string, string | number> = {
-        startDate: dateRange[0].startOf("day").toISOString(),
-        endDate: dateRange[1].startOf("day").toISOString()
+        startDate: filters.dateRange[0].startOf("day").toISOString(),
+        endDate: filters.dateRange[1].startOf("day").toISOString()
       };
       if (!forExport) {
         params.page = expensesPage;
@@ -138,21 +159,27 @@ export default function ExpensesPanel() {
       if (defaultBranchId) {
         params.branchId = defaultBranchId;
       }
-      if (expenseTypeFilter !== "all") {
-        params.expenseType = expenseTypeFilter;
+      if (filters.search.trim()) {
+        params.search = filters.search.trim();
       }
-      if (salaryFilter !== "all") {
-        params.salaryFilter = salaryFilter;
+      if (filters.categoryId) {
+        params.categoryId = filters.categoryId;
       }
-      if (categoryFilter) {
-        params.categoryId = categoryFilter;
+      if (filters.employeeUserId) {
+        params.employeeUserId = filters.employeeUserId;
       }
-      if (employeeFilter) {
-        params.employeeUserId = employeeFilter;
+      if (filters.expenseKind !== "all") {
+        params.expenseKind = filters.expenseKind;
+      }
+      if (filters.minAmount !== null) {
+        params.minAmount = filters.minAmount;
+      }
+      if (filters.maxAmount !== null) {
+        params.maxAmount = filters.maxAmount;
       }
       return params;
     },
-    [dateRange, expensesPage, expensesPageSize, defaultBranchId, expenseTypeFilter, salaryFilter, categoryFilter, employeeFilter]
+    [filters, expensesPage, expensesPageSize, defaultBranchId]
   );
 
   const loadCategories = useCallback(async () => {
@@ -161,11 +188,14 @@ export default function ExpensesPanel() {
       const { data } = await apiClient.get<ExpenseCategoriesResponse>("/gym/expense-categories");
       if (data.success && Array.isArray(data.categories)) {
         setCategories(data.categories);
+        return data.categories;
       } else {
         setCategories([]);
+        return [];
       }
     } catch {
       setCategories([]);
+      return [];
     } finally {
       setCategoriesLoading(false);
     }
@@ -179,8 +209,9 @@ export default function ExpensesPanel() {
         params.branchId = defaultBranchId;
       }
       const { data } = await apiClient.get<ExpenseEmployeesResponse>("/gym/expenses/staff-users", { params });
-      if (data.success && Array.isArray(data.staffUsers)) {
-        setStaffUsers(data.staffUsers);
+      const users = Array.isArray(data.staffUsers) ? data.staffUsers : Array.isArray(data.employees) ? data.employees : [];
+      if (data.success && users.length >= 0) {
+        setStaffUsers(users);
       } else {
         setStaffUsers([]);
       }
@@ -240,6 +271,30 @@ export default function ExpensesPanel() {
   }, [buildExpenseQueryParams, message]);
 
   useEffect(() => {
+    const raw = globalThis.localStorage.getItem(FILTER_STORAGE_KEY);
+    if (!raw) {
+      setFiltersHydrated(true);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw) as Partial<ExpenseFilters> & { fromDate?: string; toDate?: string };
+      const restored: ExpenseFilters = {
+        ...initialFilters,
+        ...parsed,
+        dateRange:
+          parsed.fromDate && parsed.toDate
+            ? [dayjs(parsed.fromDate), dayjs(parsed.toDate)]
+            : initialFilters.dateRange
+      };
+      setFilters(restored);
+    } catch {
+      globalThis.localStorage.removeItem(FILTER_STORAGE_KEY);
+    } finally {
+      setFiltersHydrated(true);
+    }
+  }, [initialFilters]);
+
+  useEffect(() => {
     void loadCategories();
   }, [loadCategories]);
 
@@ -248,12 +303,24 @@ export default function ExpensesPanel() {
   }, [loadEmployees]);
 
   useEffect(() => {
-    void loadExpenses();
-  }, [loadExpenses]);
+    if (expenseDrawerOpen && useBranchUserSelection && staffUsers.length === 0 && !employeesLoading) {
+      void loadEmployees();
+    }
+  }, [expenseDrawerOpen, useBranchUserSelection, staffUsers.length, employeesLoading, loadEmployees]);
 
   useEffect(() => {
+    if (!filtersHydrated) {
+      return;
+    }
+    void loadExpenses();
+  }, [loadExpenses, filtersHydrated]);
+
+  useEffect(() => {
+    if (!filtersHydrated) {
+      return;
+    }
     void loadCategorySummary();
-  }, [loadCategorySummary]);
+  }, [loadCategorySummary, filtersHydrated]);
 
   const openAddExpense = () => {
     setEditingExpense(null);
@@ -273,8 +340,10 @@ export default function ExpensesPanel() {
     }
     if (editingExpense) {
       expenseForm.setFieldsValue({
-        expenseType: editingExpense.expenseType ?? "custom",
-        employeeUserId: editingExpense.employeeUserId ?? undefined,
+        employeeUserId:
+          editingExpense.employeeUserId ??
+          (editingExpense.employeeName?.trim().toLowerCase() === "general" ? GENERAL_EMPLOYEE_OPTION_VALUE : undefined),
+        employeeName: editingExpense.employeeUserId ? undefined : (editingExpense.employeeName ?? undefined),
         amount: editingExpense.amount,
         date: dayjs(editingExpense.date),
         categoryId: editingExpense.categoryId ?? undefined,
@@ -286,12 +355,27 @@ export default function ExpensesPanel() {
     expenseForm.setFieldsValue({
       date: dayjs(),
       amount: undefined,
-      expenseType: "employee_salary",
       employeeUserId: undefined,
-      categoryId: undefined,
+      employeeName: undefined,
+      categoryId: newlyCreatedCategoryId ?? undefined,
       notes: undefined
     });
-  }, [expenseDrawerOpen, editingExpense, expenseForm, defaultBranchId]);
+  }, [expenseDrawerOpen, editingExpense, expenseForm, defaultBranchId, newlyCreatedCategoryId]);
+
+  useEffect(() => {
+    if (!expenseDrawerOpen) {
+      return;
+    }
+    if (!showEmployeeSection) {
+      expenseForm.setFieldsValue({ employeeUserId: undefined, employeeName: undefined });
+      return;
+    }
+    if (useBranchUserSelection) {
+      expenseForm.setFieldsValue({ employeeName: undefined });
+      return;
+    }
+    expenseForm.setFieldsValue({ employeeUserId: undefined });
+  }, [expenseDrawerOpen, showEmployeeSection, useBranchUserSelection, expenseForm]);
 
   const submitExpense = async () => {
     try {
@@ -301,10 +385,12 @@ export default function ExpensesPanel() {
       }
       const v = await expenseForm.validateFields();
       setExpenseSubmitting(true);
+      const selectedEmployeeUserId = v.employeeUserId ?? null;
+      const selectedEmployeeName = useBranchUserSelection ? "" : (v.employeeName?.trim() ?? "");
       const payload: Record<string, unknown> = {
         branchId: defaultBranchId,
-        expenseType: v.expenseType,
-        employeeUserId: v.employeeUserId ?? null,
+        employeeUserId: selectedEmployeeUserId,
+        employeeName: selectedEmployeeName,
         amount: v.amount,
         date: v.date.toISOString(),
         notes: v.notes?.trim() ?? "",
@@ -363,10 +449,28 @@ export default function ExpensesPanel() {
     }
   };
 
+  const confirmDeleteExpense = (row: ExpenseRow) => {
+    modal.confirm({
+      title: "Delete this expense?",
+      okText: "Delete",
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        await deleteExpense(row);
+      }
+    });
+  };
+
   const openAddCategory = () => {
     setEditingCategory(null);
     setCategoryDrawerOpen(true);
     clearDirty("expenses-category-drawer");
+  };
+
+  const openAddCategoryFromExpenseDrawer = () => {
+    setReturnToExpenseDrawer(true);
+    setExpenseDrawerOpen(false);
+    setEditingCategory(null);
+    setCategoryDrawerOpen(true);
   };
 
   const openEditCategory = (row: ExpenseCategory) => {
@@ -380,36 +484,77 @@ export default function ExpensesPanel() {
       return;
     }
     if (editingCategory) {
-      categoryForm.setFieldsValue({ name: editingCategory.name, description: editingCategory.description });
+      categoryForm.setFieldsValue({
+        name: editingCategory.name,
+        description: editingCategory.description
+      });
+      setShowEmployeeDetailsToggle(editingCategory.showEmployeeDetails === true);
+      setListBranchUsersToggle(editingCategory.listBranchUsers === true);
+      setMandatoryUserToggle(editingCategory.mandatory === true);
       return;
     }
-    categoryForm.resetFields();
+    categoryForm.setFieldsValue({
+      name: "",
+      description: ""
+    });
+    setShowEmployeeDetailsToggle(false);
+    setListBranchUsersToggle(false);
+    setMandatoryUserToggle(false);
   }, [categoryDrawerOpen, editingCategory, categoryForm]);
 
   const submitCategory = async () => {
     try {
-      const v = await categoryForm.validateFields();
+      await categoryForm.validateFields();
+      const formValues = categoryForm.getFieldsValue(true) as CategoryFormValues;
+      const payload = {
+        name: formValues.name,
+        description: formValues.description ?? "",
+        showEmployeeDetails: showEmployeeDetailsToggle === true,
+        listBranchUsers: showEmployeeDetailsToggle === true && listBranchUsersToggle === true,
+        mandatory: showEmployeeDetailsToggle === true && mandatoryUserToggle === true
+      };
       setCategorySubmitting(true);
       if (editingCategory) {
         const { data } = await apiClient.patch<ExpenseMutationResponse>(
           `/gym/expense-categories/${editingCategory.id}`,
-          v
+          payload
         );
         if (data.success) {
+          if (data.category) {
+            setCategories((prev) => prev.map((item) => (item.id === data.category?.id ? data.category : item)));
+          }
           message.success("Category updated.");
           setCategoryDrawerOpen(false);
           clearDirty("expenses-category-drawer");
-          void loadCategories();
+          await loadCategories();
         } else if (data.message) {
           message.error(data.message);
         }
       } else {
-        const { data } = await apiClient.post<ExpenseMutationResponse>("/gym/expense-categories", v);
+        const { data } = await apiClient.post<ExpenseMutationResponse>("/gym/expense-categories", payload);
         if (data.success) {
+          if (data.category) {
+            const createdCategory = data.category;
+            setCategories((prev) => {
+              const exists = prev.some((item) => item.id === createdCategory.id);
+              if (exists) {
+                return prev.map((item) => (item.id === createdCategory.id ? createdCategory : item));
+              }
+              return [...prev, createdCategory];
+            });
+          }
           message.success("Category saved.");
           setCategoryDrawerOpen(false);
           clearDirty("expenses-category-drawer");
-          void loadCategories();
+          await loadCategories();
+          if (data.category?.id) {
+            setNewlyCreatedCategoryId(data.category.id);
+          }
+          if (returnToExpenseDrawer) {
+            setReturnToExpenseDrawer(false);
+            setEditingExpense(null);
+            setExpenseDrawerOpen(true);
+          }
         } else if (data.message) {
           message.error(data.message);
         }
@@ -440,6 +585,17 @@ export default function ExpensesPanel() {
     }
   };
 
+  const confirmDeleteCategory = (row: ExpenseCategory) => {
+    modal.confirm({
+      title: "Delete this category?",
+      okText: "Delete",
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        await deleteCategory(row);
+      }
+    });
+  };
+
   const expenseColumns: ColumnsType<ExpenseRow> = [
     {
       title: "Date",
@@ -457,9 +613,7 @@ export default function ExpensesPanel() {
       title: "Expense Type",
       key: "expenseType",
       render: (_, row) =>
-        row.expenseTypeLabel ??
-        EXPENSE_TYPE_OPTIONS.find((opt) => opt.value === row.expenseType)?.label ??
-        row.expenseType
+        row.categoryName ?? row.expenseTypeLabel ?? "Category"
     },
     {
       title: "Branch",
@@ -491,18 +645,45 @@ export default function ExpensesPanel() {
           <Button type="link" size="small" onClick={() => openEditExpense(row)}>
             Edit
           </Button>
-          <Popconfirm title="Delete this expense?" onConfirm={() => void deleteExpense(row)}>
-            <Button type="link" size="small" danger>
-              Delete
-            </Button>
-          </Popconfirm>
+          <Button type="link" size="small" danger onClick={() => confirmDeleteExpense(row)}>
+            Delete
+          </Button>
         </Space>
       )
     }
   ];
 
+  const visibleExpenseColumns = useMemo(
+    () =>
+      expenseColumns.filter((column) => {
+        const key = String(column.key ?? "") as ExpenseTableColumnKey;
+        return visibleExpenseColumnKeys.includes(key);
+      }),
+    [expenseColumns, visibleExpenseColumnKeys]
+  );
+
+  const expenseColumnOptions: Array<{ label: string; value: ExpenseTableColumnKey }> = useMemo(
+    () => [
+      { label: "Date", value: "date" },
+      { label: "Amount", value: "amount" },
+      { label: "Expense Type", value: "expenseType" },
+      { label: "Branch", value: "branch" },
+      { label: "Employee", value: "employee" },
+      { label: "Category", value: "category" },
+      { label: "Notes / Description", value: "notes" },
+      { label: "Actions", value: "actions" }
+    ],
+    []
+  );
+
   const categoryColumns: ColumnsType<ExpenseCategory> = [
     { title: "Category Name", dataIndex: "name", key: "name" },
+    {
+      title: "Employee details",
+      key: "employeeSettings",
+      render: (_, row) =>
+        row.showEmployeeDetails ? `Enabled${row.mandatory ? " • Mandatory" : ""}${row.listBranchUsers ? " • Branch users" : ""}` : "Disabled"
+    },
     { title: "Description", dataIndex: "description", key: "description", ellipsis: true },
     {
       title: "Actions",
@@ -513,11 +694,9 @@ export default function ExpensesPanel() {
           <Button type="link" size="small" onClick={() => openEditCategory(row)}>
             Edit
           </Button>
-          <Popconfirm title="Delete this category?" onConfirm={() => void deleteCategory(row)}>
-            <Button type="link" size="small" danger>
-              Delete
-            </Button>
-          </Popconfirm>
+          <Button type="link" size="small" danger onClick={() => confirmDeleteCategory(row)}>
+            Delete
+          </Button>
         </Space>
       )
     }
@@ -539,6 +718,65 @@ export default function ExpensesPanel() {
       render: (amount: number) => formatInr(amount)
     }
   ];
+
+  const filterableEmployeeOptions = useMemo(() => employeeOptions, [employeeOptions]);
+
+  useEffect(() => {
+    if (!filterOpen || employeesLoading || staffUsers.length > 0) {
+      return;
+    }
+    void loadEmployees();
+  }, [filterOpen, employeesLoading, staffUsers.length, loadEmployees]);
+
+  const countActiveFilters = useCallback((value: ExpenseFilters) => {
+    let count = 0;
+    if (value.search.trim()) {
+      count += 1;
+    }
+    if (value.categoryId) {
+      count += 1;
+    }
+    if (value.employeeUserId) {
+      count += 1;
+    }
+    if (value.expenseKind !== "all") {
+      count += 1;
+    }
+    if (value.minAmount !== null || value.maxAmount !== null) {
+      count += 1;
+    }
+    if (value.dateRange?.[0] || value.dateRange?.[1]) {
+      count += 1;
+    }
+    return count;
+  }, []);
+
+  useEffect(() => {
+    setActiveFilters(countActiveFilters(filters));
+  }, [filters, countActiveFilters]);
+
+  const applyFilters = (nextFilters: ExpenseFilters) => {
+    setFilters(nextFilters);
+    setExpensesPage(1);
+    setSummaryPage(1);
+    setFilterOpen(false);
+    globalThis.localStorage.setItem(
+      FILTER_STORAGE_KEY,
+      JSON.stringify({
+        ...nextFilters,
+        fromDate: nextFilters.dateRange[0].toISOString(),
+        toDate: nextFilters.dateRange[1].toISOString()
+      })
+    );
+  };
+
+  const clearFilters = () => {
+    setFilters(initialFilters);
+    setExpensesPage(1);
+    setSummaryPage(1);
+    setFilterOpen(false);
+    globalThis.localStorage.removeItem(FILTER_STORAGE_KEY);
+  };
 
   return (
     <div>
@@ -570,75 +808,71 @@ export default function ExpensesPanel() {
                   style={{
                     display: "flex",
                     flexWrap: "wrap",
-                    justifyContent: "space-between",
+                    justifyContent: "flex-end",
                     alignItems: "center",
                     gap: 12,
                     marginBottom: 16
                   }}
                 >
                   <Space wrap>
-                    <RangePicker
-                      value={dateRange}
-                      format="DD-MM-YYYY"
-                      onChange={(v) => {
-                        if (!v?.[0] || !v?.[1]) {
-                          return;
-                        }
-                        setExpensesPage(1);
-                        setDateRange([v[0], v[1]]);
-                      }}
-                    />
-                    <Select
-                      style={{ minWidth: 220 }}
-                      value={expenseTypeFilter}
-                      onChange={(value) => {
-                        setExpensesPage(1);
-                        setExpenseTypeFilter(value);
-                      }}
-                      options={[
-                        { value: "all", label: "All expense types" },
-                        ...EXPENSE_TYPE_OPTIONS
-                      ]}
-                    />
-                    <Select
-                      style={{ minWidth: 220 }}
-                      value={salaryFilter}
-                      onChange={(value) => {
-                        setExpensesPage(1);
-                        setSalaryFilter(value);
-                      }}
-                      options={[
-                        { value: "all", label: "All (salary + non-salary)" },
-                        { value: "salary_only", label: "Salary only" },
-                        { value: "employee_salary", label: "Employee salary only" },
-                        { value: "sanitary_worker_salary", label: "Sanitary worker salary only" }
-                      ]}
-                    />
-                    <Select
-                      allowClear
-                      style={{ minWidth: 220 }}
-                      placeholder="Filter by employee"
-                      value={employeeFilter || undefined}
-                      onChange={(value) => {
-                        setExpensesPage(1);
-                        setEmployeeFilter(value ?? "");
-                      }}
-                      options={employeeOptions}
-                      loading={employeesLoading}
-                    />
-                    <Select
-                      allowClear
-                      style={{ minWidth: 220 }}
-                      placeholder="Filter by custom category"
-                      value={categoryFilter || undefined}
-                      onChange={(value) => {
-                        setExpensesPage(1);
-                        setCategoryFilter(value ?? "");
-                      }}
-                      options={categoryOptions}
-                    />
-                  </Space>
-                  <Space wrap>
+                    <Dropdown
+                      trigger={["click"]}
+                      popupRender={() => (
+                        <div
+                          style={{
+                            background: token.colorBgElevated,
+                            border: `1px solid ${token.colorBorderSecondary}`,
+                            borderRadius: 8,
+                            padding: 10,
+                            minWidth: 220
+                          }}
+                        >
+                          <Checkbox.Group
+                            style={{ display: "grid", gap: 6 }}
+                            value={visibleExpenseColumnKeys}
+                            onChange={(checked) => {
+                              const next = checked.map((value) => String(value) as ExpenseTableColumnKey);
+                              if (next.length === 0) {
+                                return;
+                              }
+                              setVisibleExpenseColumnKeys(next);
+                            }}
+                          >
+                            {expenseColumnOptions.map((option) => (
+                              <Checkbox key={option.value} value={option.value}>
+                                {option.label}
+                              </Checkbox>
+                            ))}
+                          </Checkbox.Group>
+                        </div>
+                      )}
+                    >
+                      <Button>Manage Columns</Button>
+                    </Dropdown>
+                    <Button
+                      icon={<FilterOutlined />}
+                      type="default"
+                      onClick={() => setFilterOpen(true)}
+                    >
+                      Filters
+                      {activeFilters > 0 ? (
+                        <span
+                          style={{
+                            marginLeft: 8,
+                            backgroundColor: "#1677ff",
+                            color: "#fff",
+                            borderRadius: "50%",
+                            padding: "2px 6px",
+                            fontSize: 12,
+                            minWidth: 16,
+                            display: "inline-block",
+                            textAlign: "center"
+                          }}
+                        >
+                          {activeFilters}
+                        </span>
+                      ) : null}
+                    </Button>
                     <ExportButton
                       endpoint="/gym/exports/expenses"
                       params={buildExpenseQueryParams(true)}
@@ -652,7 +886,7 @@ export default function ExpensesPanel() {
                 <Table<ExpenseRow>
                   rowKey="id"
                   loading={expensesLoading}
-                  columns={expenseColumns}
+                  columns={visibleExpenseColumns}
                   dataSource={expenses}
                   pagination={{
                     current: expensesPage,
@@ -700,7 +934,20 @@ export default function ExpensesPanel() {
                     loading={summaryLoading}
                     columns={summaryColumns}
                     dataSource={summaryRows}
-                    pagination={false}
+                    pagination={{
+                      current: summaryPage,
+                      pageSize: summaryPageSize,
+                      total: summaryRows.length,
+                      showSizeChanger: true,
+                      showQuickJumper: true,
+                      pageSizeOptions: ["10", "25", "50", "100"],
+                      size: "small",
+                      onChange: (page, pageSize) => {
+                        setSummaryPage(page);
+                        setSummaryPageSize(pageSize);
+                      },
+                      showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} categories`
+                    }}
                     locale={{
                       emptyText: (
                         <Empty
@@ -724,10 +971,7 @@ export default function ExpensesPanel() {
             label: "Categories",
             children: (
               <>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, gap: 12 }}>
-                  <Button icon={<ReloadOutlined />} onClick={() => void loadCategories()}>
-                    Refresh
-                  </Button>
+                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16, gap: 12 }}>
                   <Button type="primary" icon={<PlusOutlined />} onClick={openAddCategory}>
                     Add category
                   </Button>
@@ -806,42 +1050,59 @@ export default function ExpensesPanel() {
           }}
         >
           <Form.Item
-            name="expenseType"
-            label="Expense Type"
-            rules={[{ required: true, message: "Select expense type" }]}
+            name="categoryId"
+            label="Category"
+            rules={[{ required: true, message: "Select category" }]}
           >
             <Select
-              options={EXPENSE_TYPE_OPTIONS}
-              onChange={() => {
-                expenseForm.setFieldsValue({ employeeUserId: undefined });
-                if (expenseForm.getFieldValue("expenseType") !== "custom") {
-                  expenseForm.setFieldsValue({ categoryId: undefined });
-                }
-              }}
+              showSearch
+              optionFilterProp="label"
+              placeholder={categories.length ? "Select category" : "No categories available"}
+              options={categoryOptions}
+              loading={categoriesLoading}
+              popupRender={(menu) => (
+                <>
+                  {menu}
+                  <div style={{ padding: 8 }}>
+                    <Button type="link" icon={<PlusOutlined />} onClick={openAddCategoryFromExpenseDrawer}>
+                      Add category
+                    </Button>
+                  </div>
+                </>
+              )}
             />
           </Form.Item>
-          {isSalaryExpense ? (
-            <Form.Item
-              name="employeeUserId"
-              label={
-                watchedExpenseType === "sanitary_worker_salary"
-                  ? "Select sanitary staff/manager to pay salary"
-                  : "Select staff/manager to pay salary"
-              }
-              rules={[{ required: true, message: "Select staff/manager" }]}
-            >
-              <Select
-                showSearch
-                optionFilterProp="label"
-                options={employeeOptions}
-                loading={employeesLoading}
-                placeholder="Select staff/manager"
-              />
-            </Form.Item>
+          {showEmployeeSection ? (
+            useBranchUserSelection ? (
+              <Form.Item
+                name="employeeUserId"
+                label="Select staff/manager"
+                rules={isEmployeeDetailsMandatory ? [{ required: true, message: "Select staff/manager" }] : undefined}
+              >
+                <Select
+                  showSearch
+                  optionFilterProp="label"
+                  options={[
+                    { value: GENERAL_EMPLOYEE_OPTION_VALUE, label: "General (Temporary / Dummy)" },
+                    ...employeeOptions
+                  ]}
+                  loading={employeesLoading}
+                  placeholder={employeeOptions.length ? "Select staff/manager" : "No staff/manager found for this branch"}
+                />
+              </Form.Item>
+            ) : (
+              <Form.Item
+                name="employeeName"
+                label="Employee / Person"
+                rules={isEmployeeDetailsMandatory ? [{ required: true, message: "Enter employee/person name" }] : undefined}
+              >
+                <Input placeholder="Type name (e.g. Guest trainer, Cleaner, etc.)" />
+              </Form.Item>
+            )
           ) : null}
           <Form.Item
             name="amount"
-            label={isSalaryExpense ? "Salary Amount" : "Amount"}
+            label="Amount"
             rules={[{ required: true, message: "Enter amount" }]}
           >
             <InputNumber
@@ -858,21 +1119,6 @@ export default function ExpensesPanel() {
           >
             <DatePicker style={{ width: "100%" }} format="DD-MM-YYYY" />
           </Form.Item>
-          {isCustomExpense ? (
-            <Form.Item
-              name="categoryId"
-              label="Custom Category"
-              rules={[{ required: true, message: "Select category" }]}
-            >
-              <Select
-                showSearch
-                optionFilterProp="label"
-                placeholder={categories.length ? "Select category" : "No categories available"}
-                options={categoryOptions}
-                loading={categoriesLoading}
-              />
-            </Form.Item>
-          ) : null}
           <Form.Item name="notes" label="Notes (optional)">
             <Input.TextArea rows={3} placeholder="Short note" />
           </Form.Item>
@@ -933,11 +1179,53 @@ export default function ExpensesPanel() {
           >
             <Input placeholder="Enter category name" />
           </Form.Item>
+          <Form.Item style={{ marginBottom: 12 }}>
+            <Space size={16} wrap>
+              <Checkbox
+                checked={showEmployeeDetailsToggle}
+                onChange={(event) => {
+                  const checked = event.target.checked;
+                  setShowEmployeeDetailsToggle(checked);
+                  if (!checked) {
+                    setListBranchUsersToggle(false);
+                    setMandatoryUserToggle(false);
+                  }
+                }}
+              >
+                Show employees details
+              </Checkbox>
+              <Checkbox
+                checked={listBranchUsersToggle}
+                disabled={!showEmployeeDetailsToggle}
+                onChange={(event) => setListBranchUsersToggle(event.target.checked)}
+              >
+                List users of current branch
+              </Checkbox>
+              <Checkbox
+                checked={mandatoryUserToggle}
+                disabled={!showEmployeeDetailsToggle}
+                onChange={(event) => setMandatoryUserToggle(event.target.checked)}
+              >
+                Mandatory user field
+              </Checkbox>
+            </Space>
+          </Form.Item>
           <Form.Item name="description" label="Description">
             <Input.TextArea rows={4} placeholder="Enter category description" />
           </Form.Item>
         </Form>
       </Drawer>
+
+      <ExpensesFilterModal
+        open={filterOpen}
+        currentFilters={filters}
+        categories={categories}
+        employeeOptions={filterableEmployeeOptions}
+        employeesLoading={employeesLoading}
+        onClose={() => setFilterOpen(false)}
+        onApply={applyFilters}
+        onClear={clearFilters}
+      />
     </div>
   );
 }

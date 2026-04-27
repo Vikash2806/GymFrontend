@@ -45,8 +45,13 @@ export type FinanceOverviewPayload = {
   revenueByBranch: RevenueByBranchRow[];
   paymentsThisMonth: PaymentThisMonthRow[];
   paymentsThisMonthHasMore: boolean;
+  paymentsThisMonthTotal: number;
+  paymentsThisMonthPage: number;
+  paymentsThisMonthPageSize: number;
   pendingMembers: PendingMemberRow[];
   pendingMembersHasMore: boolean;
+  pendingMembersPage: number;
+  pendingMembersPageSize: number;
   pendingSummary: {
     totalMembers: number;
     totalPending: number;

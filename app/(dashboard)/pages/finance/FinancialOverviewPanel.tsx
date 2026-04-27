@@ -68,19 +68,27 @@ export default function FinancialOverviewPanel() {
 
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [month, setMonth] = useState(() => new Date().getMonth() + 1);
-  const [loading, setLoading] = useState(false);
+  const [loadingOverview, setLoadingOverview] = useState(false);
+  const [loadingPaymentsCard, setLoadingPaymentsCard] = useState(false);
+  const [loadingPendingCard, setLoadingPendingCard] = useState(false);
   const [overview, setOverview] = useState<FinanceOverviewPayload | null>(null);
+  const [paymentsPage, setPaymentsPage] = useState(1);
+  const [paymentsPageSize, setPaymentsPageSize] = useState(10);
+  const [pendingPage, setPendingPage] = useState(1);
+  const [pendingPageSize, setPendingPageSize] = useState(10);
   const [loadingRevenueTrend, setLoadingRevenueTrend] = useState(false);
   const [revenueTrendData, setRevenueTrendData] = useState<
     { month: number; label: string; amount: number; year: number }[]
   >([]);
   const selectedBranchId = session?.activeBranch?.id ?? session?.user?.defaults?.branchId ?? "";
   const overviewReqSeq = useRef(0);
+  const paymentsReqSeq = useRef(0);
+  const pendingReqSeq = useRef(0);
   const revenueTrendReqSeq = useRef(0);
 
-  const load = useCallback(async () => {
+  const loadOverview = useCallback(async () => {
     const reqId = ++overviewReqSeq.current;
-    setLoading(true);
+    setLoadingOverview(true);
     try {
       const params: Record<string, string | number> = { year, month };
       if (selectedBranchId) {
@@ -103,14 +111,105 @@ export default function FinancialOverviewPanel() {
       message.error("Could not load financial overview.");
     } finally {
       if (reqId === overviewReqSeq.current) {
-        setLoading(false);
+        setLoadingOverview(false);
       }
     }
   }, [year, month, selectedBranchId, message]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    setPaymentsPage(1);
+    setPendingPage(1);
+  }, [year, month, selectedBranchId]);
+
+  useEffect(() => {
+    void loadOverview();
+  }, [year, month, selectedBranchId, loadOverview]);
+
+  const loadPaymentsPage = useCallback(async () => {
+    const reqId = ++paymentsReqSeq.current;
+    setLoadingPaymentsCard(true);
+    try {
+      const params: Record<string, string | number> = {
+        year,
+        month,
+        paymentsPage,
+        paymentsPageSize
+      };
+      if (selectedBranchId) {
+        params.branchId = selectedBranchId;
+      }
+      const { data } = await apiClient.get<FinanceOverviewResponse>("/gym/finance/overview", { params });
+      if (reqId !== paymentsReqSeq.current || !data.success || !data.overview) {
+        return;
+      }
+      setOverview((prev) =>
+        prev
+          ? {
+              ...prev,
+              paymentsThisMonth: data.overview.paymentsThisMonth,
+              paymentsThisMonthHasMore: data.overview.paymentsThisMonthHasMore,
+              paymentsThisMonthTotal: data.overview.paymentsThisMonthTotal,
+              paymentsThisMonthPage: data.overview.paymentsThisMonthPage,
+              paymentsThisMonthPageSize: data.overview.paymentsThisMonthPageSize
+            }
+          : data.overview
+      );
+    } finally {
+      if (reqId === paymentsReqSeq.current) {
+        setLoadingPaymentsCard(false);
+      }
+    }
+  }, [year, month, selectedBranchId, paymentsPage, paymentsPageSize]);
+
+  const loadPendingPage = useCallback(async () => {
+    const reqId = ++pendingReqSeq.current;
+    setLoadingPendingCard(true);
+    try {
+      const params: Record<string, string | number> = {
+        year,
+        month,
+        pendingPage,
+        pendingPageSize
+      };
+      if (selectedBranchId) {
+        params.branchId = selectedBranchId;
+      }
+      const { data } = await apiClient.get<FinanceOverviewResponse>("/gym/finance/overview", { params });
+      if (reqId !== pendingReqSeq.current || !data.success || !data.overview) {
+        return;
+      }
+      setOverview((prev) =>
+        prev
+          ? {
+              ...prev,
+              pendingMembers: data.overview.pendingMembers,
+              pendingMembersHasMore: data.overview.pendingMembersHasMore,
+              pendingMembersPage: data.overview.pendingMembersPage,
+              pendingMembersPageSize: data.overview.pendingMembersPageSize,
+              pendingSummary: data.overview.pendingSummary
+            }
+          : data.overview
+      );
+    } finally {
+      if (reqId === pendingReqSeq.current) {
+        setLoadingPendingCard(false);
+      }
+    }
+  }, [year, month, selectedBranchId, pendingPage, pendingPageSize]);
+
+  useEffect(() => {
+    if (!overview) {
+      return;
+    }
+    void loadPaymentsPage();
+  }, [paymentsPage, paymentsPageSize, loadPaymentsPage]);
+
+  useEffect(() => {
+    if (!overview) {
+      return;
+    }
+    void loadPendingPage();
+  }, [pendingPage, pendingPageSize, loadPendingPage]);
 
   const loadRevenueTrend = useCallback(async () => {
     const reqId = ++revenueTrendReqSeq.current;
@@ -212,7 +311,7 @@ export default function FinancialOverviewPanel() {
 
       <Row gutter={[16, 16]}>
         <Col xs={24} md={8}>
-          <Card loading={loading} styles={{ body: { padding: 20 } }}>
+          <Card loading={loadingOverview} styles={{ body: { padding: 20 } }}>
             <Space align="start" size="middle" style={{ width: "100%" }}>
               {kpiIconWrap("#22c55e", <RiseOutlined />)}
               <div style={{ flex: 1 }}>
@@ -227,7 +326,7 @@ export default function FinancialOverviewPanel() {
           </Card>
         </Col>
         <Col xs={24} md={8}>
-          <Card loading={loading} styles={{ body: { padding: 20 } }}>
+          <Card loading={loadingOverview} styles={{ body: { padding: 20 } }}>
             <Space align="start" size="middle" style={{ width: "100%" }}>
               {kpiIconWrap("#f97316", <ClockCircleOutlined />)}
               <div style={{ flex: 1 }}>
@@ -242,7 +341,7 @@ export default function FinancialOverviewPanel() {
           </Card>
         </Col>
         <Col xs={24} md={8}>
-          <Card loading={loading} styles={{ body: { padding: 20 } }}>
+          <Card loading={loadingOverview} styles={{ body: { padding: 20 } }}>
             <Space align="start" size="middle" style={{ width: "100%" }}>
               {kpiIconWrap("#ef4444", <WalletOutlined />)}
               <div style={{ flex: 1 }}>
@@ -279,7 +378,7 @@ export default function FinancialOverviewPanel() {
       </Card>
 
       <Card
-        loading={loading}
+        loading={loadingOverview}
         style={{ marginTop: 16 }}
         title={
           <div>
@@ -327,7 +426,7 @@ export default function FinancialOverviewPanel() {
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
         <Col xs={24} lg={12}>
           <Card
-            loading={loading}
+            loading={loadingOverview}
             title={
               <div>
                 <Title level={5} style={{ margin: 0 }}>
@@ -351,8 +450,8 @@ export default function FinancialOverviewPanel() {
             {overview && overview.paymentsThisMonth.length > 0 ? (
               <Table
                 size="small"
-                pagination={false}
                 rowKey="id"
+                loading={loadingPaymentsCard}
                 dataSource={overview.paymentsThisMonth}
                 columns={[
                   { title: "Member", dataIndex: "memberName", key: "memberName" },
@@ -369,20 +468,29 @@ export default function FinancialOverviewPanel() {
                     render: (_, row) => new Date(row.paidAt).toLocaleString("en-IN", { dateStyle: "medium" })
                   }
                 ]}
+                pagination={{
+                  current: paymentsPage,
+                  pageSize: paymentsPageSize,
+                  total: overview.paymentsThisMonthTotal ?? overview.paymentsThisMonth.length,
+                  showSizeChanger: true,
+                  showQuickJumper: true,
+                  pageSizeOptions: ["10", "25", "50", "100"],
+                  size: "small",
+                  onChange: (page, pageSize) => {
+                    setPaymentsPage(page);
+                    setPaymentsPageSize(pageSize);
+                  },
+                  showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} payments`
+                }}
               />
             ) : (
               <Empty description="No payments this month" />
             )}
-            {overview?.paymentsThisMonthHasMore ? (
-              <Text type="secondary" style={{ display: "block", marginTop: 8 }}>
-                Showing first {overview.paymentsThisMonth.length} payments.
-              </Text>
-            ) : null}
           </Card>
         </Col>
         <Col xs={24} lg={12}>
           <Card
-            loading={loading}
+            loading={loadingOverview}
             title={
               <div>
                 <Title level={5} style={{ margin: 0 }}>
@@ -409,7 +517,8 @@ export default function FinancialOverviewPanel() {
                   style={{
                     padding: 12,
                     marginBottom: 12,
-                    background: token.colorPrimaryBg,
+                    background: token.colorBgContainer,
+                    border: `1px solid ${token.colorBorderSecondary}`,
                     borderRadius: token.borderRadiusLG
                   }}
                 >
@@ -436,8 +545,8 @@ export default function FinancialOverviewPanel() {
                 </div>
                 <Table
                   size="small"
-                  pagination={false}
                   rowKey="memberId"
+                  loading={loadingPendingCard}
                   dataSource={overview.pendingMembers}
                   columns={[
                     { title: "Member", dataIndex: "name", key: "name" },
@@ -450,12 +559,21 @@ export default function FinancialOverviewPanel() {
                     },
                     { title: "Plan", dataIndex: "planName", key: "planName", ellipsis: true }
                   ]}
+                  pagination={{
+                    current: pendingPage,
+                    pageSize: pendingPageSize,
+                    total: overview.pendingSummary.totalMembers,
+                    showSizeChanger: true,
+                    showQuickJumper: true,
+                    pageSizeOptions: ["10", "25", "50", "100"],
+                    size: "small",
+                    onChange: (page, pageSize) => {
+                      setPendingPage(page);
+                      setPendingPageSize(pageSize);
+                    },
+                    showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} members`
+                  }}
                 />
-                {overview.pendingMembersHasMore ? (
-                  <Text type="secondary" style={{ display: "block", marginTop: 8 }}>
-                    Showing first {overview.pendingMembers.length} members.
-                  </Text>
-                ) : null}
               </>
             ) : (
               <Empty description="No pending payments" />

@@ -243,7 +243,7 @@ export default function MembersPanel({
   createdPlanFromMemberships,
   onCreatedPlanHandled
 }: MembersPanelProps) {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const { token } = theme.useToken();
   const session = useAppSelector(selectSession);
   const canManageBranches = hasFeature(session, FEATURES.BRANCH_MANAGEMENT);
@@ -277,6 +277,9 @@ export default function MembersPanel({
   const [lookupMember, setLookupMember] = useState<Member | null>(null);
   const [lookupNote, setLookupNote] = useState<string>("");
   const [newMembershipTarget, setNewMembershipTarget] = useState<Member | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<Member | null>(null);
+  const [cancelRefundAmount, setCancelRefundAmount] = useState<number | null>(null);
+  const [cancelSubmitting, setCancelSubmitting] = useState(false);
   const [visibleColumnKeys, setVisibleColumnKeys] = useState<MemberTableColumnKey[]>([
     "member",
     "status",
@@ -593,19 +596,34 @@ export default function MembersPanel({
     setModalOpen(true);
   };
 
-  const handleCancelMembership = async (record: Member) => {
+  const openCancelMembershipModal = (record: Member) => {
+    setCancelTarget(record);
+    setCancelRefundAmount(null);
+  };
+
+  const closeCancelMembershipModal = () => {
+    if (cancelSubmitting) {
+      return;
+    }
+    setCancelTarget(null);
+    setCancelRefundAmount(null);
+  };
+
+  const handleCancelMembership = async (record: Member, refundAmount: number) => {
     const subscriptionId = record.currentSubscription?.subscriptionId;
     if (!subscriptionId) {
       message.error("No current membership found.");
       return;
     }
     try {
+      setCancelSubmitting(true);
       const { data } = await apiClient.patch<SubscriptionPatchResponse>(
         `/gym/members/${record._id}/subscriptions/${subscriptionId}`,
-        { status: "cancelled", reverseOverdue: true }
+        { status: "cancelled", reverseOverdue: true, refundAmount }
       );
       if (data.success) {
-        message.success("Membership cancelled and overdue reversed.");
+        message.success("Membership cancelled and refund processed.");
+        closeCancelMembershipModal();
         await loadMembers();
       } else {
         message.error(data.message ?? "Could not cancel membership.");
@@ -616,6 +634,8 @@ export default function MembersPanel({
           ? (e as { response?: { data?: { message?: string } } }).response?.data?.message
           : undefined;
       message.error(msg ?? "Could not cancel membership.");
+    } finally {
+      setCancelSubmitting(false);
     }
   };
 
@@ -730,14 +750,7 @@ export default function MembersPanel({
       danger: true,
       disabled: !record.currentSubscription,
       onClick: () => {
-        Modal.confirm({
-          title: "Cancel membership and reverse overdue?",
-          okText: "Cancel Membership",
-          okButtonProps: { danger: true },
-          onOk: async () => {
-            await handleCancelMembership(record);
-          }
-        });
+        openCancelMembershipModal(record);
       }
     },
     {
@@ -756,7 +769,7 @@ export default function MembersPanel({
       danger: true,
       disabled: !canDeleteMember,
       onClick: () => {
-        Modal.confirm({
+        modal.confirm({
           title: "Delete this member?",
           okText: "Delete",
           okButtonProps: { danger: true },
@@ -1126,14 +1139,19 @@ export default function MembersPanel({
         title: "Payment Status",
         key: "paymentStatus",
         width: 130,
-        render: (_, record) =>
-          record.paymentStatus?.status ? (
-            <Tag color={record.paymentStatus.status === "paid" ? "success" : "processing"}>
-              {record.paymentStatus.status === "paid" ? "PAID" : "PARTIALLY PAID"}
-            </Tag>
-          ) : (
-            "—"
-          )
+        render: (_, record) => {
+          const paymentStatus = record.currentSubscription?.payment?.status;
+          if (!paymentStatus) {
+            return "—";
+          }
+          if (paymentStatus === "paid") {
+            return <Tag color="success">PAID</Tag>;
+          }
+          if (paymentStatus === "partial") {
+            return <Tag color="processing">PARTIALLY PAID</Tag>;
+          }
+          return <Tag color="warning">PENDING</Tag>;
+        }
       },
       {
         title: "Actions",
@@ -1298,6 +1316,74 @@ export default function MembersPanel({
         member={detailMember}
         onClose={closeDetail}
       />
+
+      <Modal
+        title="Cancel membership"
+        open={Boolean(cancelTarget)}
+        onCancel={closeCancelMembershipModal}
+        footer={[
+          <Button key="cancel" onClick={closeCancelMembershipModal} disabled={cancelSubmitting}>
+            Cancel
+          </Button>,
+          <Button
+            key="submit"
+            type="primary"
+            danger
+            loading={cancelSubmitting}
+            onClick={() => {
+              if (!cancelTarget?.currentSubscription) {
+                return;
+              }
+              const paidAmount = Number(cancelTarget.currentSubscription.payment?.paidAmount ?? 0);
+              const refundValue = Number(cancelRefundAmount ?? 0);
+              if (!Number.isFinite(refundValue) || refundValue < 0) {
+                message.error("Enter a valid refund amount.");
+                return;
+              }
+              if (refundValue > paidAmount) {
+                message.error("Refund amount cannot exceed paid amount.");
+                return;
+              }
+              void handleCancelMembership(cancelTarget, refundValue);
+            }}
+          >
+            Proceed Refund
+          </Button>
+        ]}
+      >
+        {cancelTarget?.currentSubscription ? (
+          <Space direction="vertical" size={12} style={{ width: "100%" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div>
+                <Text type="secondary">Membership amount</Text>
+                <div>
+                  <Text strong>{formatInrWhole(cancelTarget.currentSubscription.payment.totalAmount ?? 0)}</Text>
+                </div>
+              </div>
+              <div>
+                <Text type="secondary">Paid amount</Text>
+                <div>
+                  <Text strong>{formatInrWhole(cancelTarget.currentSubscription.payment.paidAmount ?? 0)}</Text>
+                </div>
+              </div>
+            </div>
+            <div>
+              <Text type="secondary">Refund amount</Text>
+              <InputNumber
+                style={{ width: "100%", marginTop: 6 }}
+                min={0}
+                max={Number(cancelTarget.currentSubscription.payment.paidAmount ?? 0)}
+                step={100}
+                value={cancelRefundAmount}
+                onChange={(value) => setCancelRefundAmount(typeof value === "number" ? value : null)}
+                placeholder="Enter refund amount"
+              />
+            </div>
+          </Space>
+        ) : (
+          <Text type="secondary">No current membership found.</Text>
+        )}
+      </Modal>
 
 
       <Modal

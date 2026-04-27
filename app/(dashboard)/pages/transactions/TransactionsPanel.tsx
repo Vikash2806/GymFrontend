@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { App, Button, Card, Col, Row, Space, Statistic, Table, Typography } from "antd";
-import { FilterOutlined } from "@ant-design/icons";
+import { App, Button, Card, Col, Row, Space, Statistic, Table, Tag, Typography, theme } from "antd";
+import { DollarCircleOutlined, FilterOutlined, TeamOutlined, TransactionOutlined, WalletOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import apiClient from "@/utils/api";
@@ -73,9 +73,26 @@ function formatDateTime(iso: string): string {
   return d.isValid() ? d.format("DD-MM-YYYY HH:mm") : "—";
 }
 
+function renderStatusTag(status: TransactionRow["status"]) {
+  if (status === "success") {
+    return <Tag color="success">SUCCESS</Tag>;
+  }
+  if (status === "pending") {
+    return <Tag color="warning">PENDING</Tag>;
+  }
+  if (status === "failed") {
+    return <Tag color="error">FAILED</Tag>;
+  }
+  if (status === "refunded") {
+    return <Tag color="processing">REFUNDED</Tag>;
+  }
+  return <Tag>{String(status).toUpperCase()}</Tag>;
+}
+
 export default function TransactionsPanel() {
   const STORAGE_KEY = "transactionFilters";
   const { message } = App.useApp();
+  const { token } = theme.useToken();
   const session = useAppSelector(selectSession);
   const defaultBranchId = session?.activeBranch?.id ?? session?.user?.defaults?.branchId ?? "";
 
@@ -237,7 +254,7 @@ export default function TransactionsPanel() {
       },
       { title: "Plan", key: "plan", width: 150, ellipsis: true, render: (_, row) => row.planName || "—" },
       { title: "Method", dataIndex: "method", key: "method", width: 90, render: (value: string) => value.toUpperCase() },
-      { title: "Status", dataIndex: "status", key: "status", width: 100, render: (value: string) => value.toUpperCase() },
+      { title: "Status", dataIndex: "status", key: "status", width: 120, render: (value: TransactionRow["status"]) => renderStatusTag(value) },
       { title: "Amount", dataIndex: "amount", key: "amount", width: 130, align: "right", render: (value: number) => formatInr(value) },
       { title: "Reference", dataIndex: "transactionRef", key: "transactionRef", width: 160, ellipsis: true, render: (value: string | null) => value || "—" },
     ],
@@ -265,6 +282,43 @@ export default function TransactionsPanel() {
     setFilterOpen(false);
   };
 
+  const metricCards = [
+    {
+      key: "membersPaid",
+      title: "Members Paid (range)",
+      value: insights.successfulMemberCount,
+      accent: token.colorSuccess,
+      bg: token.colorSuccessBg,
+      icon: <TeamOutlined />
+    },
+    {
+      key: "collected",
+      title: "Collected Amount (range)",
+      value: insights.successfulAmount,
+      accent: token.colorPrimary,
+      bg: token.colorPrimaryBg,
+      icon: <WalletOutlined />,
+      formatter: (value: number) => formatInr(value)
+    },
+    {
+      key: "refunded",
+      title: "Refunded Amount (range)",
+      value: insights.refundedAmount,
+      accent: token.colorWarning,
+      bg: token.colorWarningBg,
+      icon: <DollarCircleOutlined />,
+      formatter: (value: number) => formatInr(value)
+    },
+    {
+      key: "totalTx",
+      title: "Total Transactions",
+      value: insights.totalTransactions,
+      accent: token.colorInfo,
+      bg: token.colorInfoBg,
+      icon: <TransactionOutlined />
+    }
+  ] as const;
+
   return (
     <Space direction="vertical" size={14} style={{ width: "100%" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -272,7 +326,11 @@ export default function TransactionsPanel() {
           Transactions
         </Title>
         <Space>
-          <Button icon={<FilterOutlined />} onClick={() => setFilterOpen(true)}>
+          <Button
+            icon={<FilterOutlined />}
+            type="default"
+            onClick={() => setFilterOpen(true)}
+          >
             Filters
             {activeFilters > 0 ? (
               <span
@@ -296,34 +354,40 @@ export default function TransactionsPanel() {
       </div>
 
       <Row gutter={[12, 12]}>
-        <Col xs={24} sm={12} md={6}>
-          <Card size="small">
-            <Statistic title="Members Paid (range)" value={insights.successfulMemberCount} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card size="small">
-            <Statistic
-              title="Collected Amount (range)"
-              value={insights.successfulAmount}
-              formatter={(value) => formatInr(Number(value))}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card size="small">
-            <Statistic
-              title="Refunded Amount (range)"
-              value={insights.refundedAmount}
-              formatter={(value) => formatInr(Number(value))}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card size="small">
-            <Statistic title="Total Transactions" value={insights.totalTransactions} />
-          </Card>
-        </Col>
+        {metricCards.map((card) => (
+          <Col key={card.key} xs={24} sm={12} md={6}>
+            <Card
+              size="small"
+              styles={{ body: { padding: 14 } }}
+              style={{
+                borderTop: `3px solid ${card.accent}`
+              }}
+            >
+              <Space align="start" style={{ width: "100%", justifyContent: "space-between" }}>
+                <Statistic
+                  title={card.title}
+                  value={card.value}
+                  formatter={(value) => (card.formatter ? card.formatter(Number(value)) : value)}
+                />
+                <div
+                  style={{
+                    width: 30,
+                    height: 30,
+                    borderRadius: "50%",
+                    background: card.bg,
+                    color: card.accent,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 16
+                  }}
+                >
+                  {card.icon}
+                </div>
+              </Space>
+            </Card>
+          </Col>
+        ))}
       </Row>
 
       <Table<TransactionRow>
