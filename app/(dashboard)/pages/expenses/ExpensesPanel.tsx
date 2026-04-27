@@ -145,6 +145,22 @@ export default function ExpensesPanel() {
     () => staffUsers.map((e) => ({ value: e.id, label: `${e.fullName} (${e.role === "manager" ? "Manager" : "Staff"})` })),
     [staffUsers]
   );
+  const drawerEmployeeOptions = useMemo(() => {
+    if (!editingExpense?.employeeUserId) {
+      return employeeOptions;
+    }
+    const alreadyPresent = employeeOptions.some((option) => option.value === editingExpense.employeeUserId);
+    if (alreadyPresent) {
+      return employeeOptions;
+    }
+    return [
+      {
+        value: editingExpense.employeeUserId,
+        label: editingExpense.employeeName?.trim() ? `${editingExpense.employeeName} (Previously selected)` : "Previously selected employee"
+      },
+      ...employeeOptions
+    ];
+  }, [employeeOptions, editingExpense]);
 
   const buildExpenseQueryParams = useCallback(
     (forExport = false) => {
@@ -366,16 +382,26 @@ export default function ExpensesPanel() {
     if (!expenseDrawerOpen) {
       return;
     }
-    if (!showEmployeeSection) {
+    // Read current category directly from form to avoid watcher timing lag
+    // clearing employee values while edit data is hydrating.
+    const currentCategoryId = expenseForm.getFieldValue("categoryId");
+    if (!currentCategoryId) {
+      return;
+    }
+    const currentCategory = categories.find((category) => category.id === currentCategoryId);
+    const currentShowEmployeeSection = currentCategory?.showEmployeeDetails === true;
+    const currentUseBranchUserSelection =
+      currentCategory?.showEmployeeDetails === true && currentCategory?.listBranchUsers === true;
+    if (!currentShowEmployeeSection) {
       expenseForm.setFieldsValue({ employeeUserId: undefined, employeeName: undefined });
       return;
     }
-    if (useBranchUserSelection) {
+    if (currentUseBranchUserSelection) {
       expenseForm.setFieldsValue({ employeeName: undefined });
       return;
     }
     expenseForm.setFieldsValue({ employeeUserId: undefined });
-  }, [expenseDrawerOpen, showEmployeeSection, useBranchUserSelection, expenseForm]);
+  }, [expenseDrawerOpen, watchedCategoryId, categories, expenseForm]);
 
   const submitExpense = async () => {
     try {
@@ -1084,7 +1110,7 @@ export default function ExpensesPanel() {
                   optionFilterProp="label"
                   options={[
                     { value: GENERAL_EMPLOYEE_OPTION_VALUE, label: "General (Temporary / Dummy)" },
-                    ...employeeOptions
+                    ...drawerEmployeeOptions
                   ]}
                   loading={employeesLoading}
                   placeholder={employeeOptions.length ? "Select staff/manager" : "No staff/manager found for this branch"}
