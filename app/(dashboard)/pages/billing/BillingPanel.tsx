@@ -18,7 +18,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import type { TableProps } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
-import dayjs, { type Dayjs } from "dayjs";
+import dayjs from "dayjs";
 import apiClient from "@/utils/api";
 import { formatInr } from "@/utils/formatCurrency";
 import { WIDE_MODAL_WIDTH } from "@/utils/modalWidths";
@@ -371,7 +371,8 @@ export default function BillingPanel() {
             setPageSize(nextPageSize);
           }
         }}
-        scroll={{ x: 960 }}
+        scroll={{ x: 960, y: "calc(100vh - 120px)" }}
+        tableLayout="fixed"
         locale={{ emptyText: "No overdue payments" }}
       />
 
@@ -384,6 +385,7 @@ export default function BillingPanel() {
         onOk={() => void submitPayment()}
         destroyOnHidden
         width={WIDE_MODAL_WIDTH}
+        styles={{ body: { maxHeight: "70vh", overflowY: "auto" } }}
       >
         {payingMember ? (
           <div style={{ marginBottom: 16 }}>

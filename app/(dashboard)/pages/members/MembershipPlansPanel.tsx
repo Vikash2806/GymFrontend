@@ -128,7 +128,7 @@ export default function MembershipPlansPanel({
     clearDirty("membership-plan-modal");
   };
 
-  const openEdit = (record: MembershipPlan) => {
+  const openEdit = useCallback((record: MembershipPlan) => {
     setEditing(record);
     form.setFieldsValue({
       branchId: record.branchId || branchId,
@@ -141,7 +141,7 @@ export default function MembershipPlansPanel({
     });
     setModalOpen(true);
     clearDirty("membership-plan-modal");
-  };
+  }, [branchId, form, clearDirty]);
 
   const closeModal = () => {
     const close = () => {
@@ -218,7 +218,7 @@ export default function MembershipPlansPanel({
     }
   };
 
-  const onDelete = async (record: MembershipPlan) => {
+  const onDelete = useCallback(async (record: MembershipPlan) => {
     const bid = record.branchId || branchId;
     if (!bid) {
       message.error("Missing branch.");
@@ -242,7 +242,7 @@ export default function MembershipPlansPanel({
           : undefined;
       message.error(msg ?? "Delete failed.");
     }
-  };
+  }, [branchId, message, loadPlans]);
 
   const columns: ColumnsType<MembershipPlan> = useMemo(
     () => [
@@ -311,7 +311,7 @@ export default function MembershipPlansPanel({
         )
       }
     ],
-    [token.colorSuccess, token.colorTextSecondary]
+    [token.colorSuccess, token.colorTextSecondary, openEdit, onDelete]
   );
 
   return (
@@ -349,6 +349,7 @@ export default function MembershipPlansPanel({
           size: "small"
         }}
         scroll={{ x: 900 }}
+        tableLayout="fixed"
       />
 
       <Modal
@@ -364,6 +365,7 @@ export default function MembershipPlansPanel({
             {editing ? "Save" : "Create Membership"}
           </Button>
         ]}
+        styles={{ body: { maxHeight: "70vh", overflowY: "auto" } }}
       >
         <Form
           form={form}

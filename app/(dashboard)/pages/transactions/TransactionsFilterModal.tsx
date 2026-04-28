@@ -62,6 +62,7 @@ export default function TransactionsFilterModal({
           Search
         </Button>
       ]}
+      styles={{ body: { maxHeight: "70vh", overflowY: "auto" } }}
     >
       <Space direction="vertical" style={{ width: "100%" }} size={12}>
         <Row gutter={[12, 12]}>

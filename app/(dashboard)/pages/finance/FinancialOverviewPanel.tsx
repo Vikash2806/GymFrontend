@@ -23,6 +23,7 @@ import {
   WalletOutlined
 } from "@ant-design/icons";
 import apiClient from "@/utils/api";
+import { fetchCached } from "@/utils/queryCache";
 import { formatInr } from "@/utils/formatCurrency";
 import type { FinanceOverviewPayload, FinanceOverviewResponse } from "@/types/finance";
 import { useAppSelector } from "@/redux/hooks";
@@ -55,6 +56,10 @@ const MONTHS: { value: number; label: string }[] = [
   { value: 12, label: "December" }
 ];
 const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+type RevenueYearTrendResponse = {
+  success: boolean;
+  trend?: Array<{ month: number; amount: number }>;
+};
 
 export default function FinancialOverviewPanel() {
   const { message } = App.useApp();
@@ -80,6 +85,7 @@ export default function FinancialOverviewPanel() {
   const [revenueTrendData, setRevenueTrendData] = useState<
     { month: number; label: string; amount: number; year: number }[]
   >([]);
+  const overviewReady = overview !== null;
   const selectedBranchId = session?.activeBranch?.id ?? session?.user?.defaults?.branchId ?? "";
   const overviewReqSeq = useRef(0);
   const paymentsReqSeq = useRef(0);
@@ -94,7 +100,12 @@ export default function FinancialOverviewPanel() {
       if (selectedBranchId) {
         params.branchId = selectedBranchId;
       }
-      const { data } = await apiClient.get<FinanceOverviewResponse>("/gym/finance/overview", { params });
+      const cacheKey = `finance-overview:${year}:${month}:${selectedBranchId || "all"}`;
+      const data = await fetchCached(
+        cacheKey,
+        async () => (await apiClient.get<FinanceOverviewResponse>("/gym/finance/overview", { params })).data,
+        20_000
+      );
       if (reqId !== overviewReqSeq.current) {
         return;
       }
@@ -142,17 +153,18 @@ export default function FinancialOverviewPanel() {
       if (reqId !== paymentsReqSeq.current || !data.success || !data.overview) {
         return;
       }
+      const nextOverview = data.overview;
       setOverview((prev) =>
         prev
           ? {
               ...prev,
-              paymentsThisMonth: data.overview.paymentsThisMonth,
-              paymentsThisMonthHasMore: data.overview.paymentsThisMonthHasMore,
-              paymentsThisMonthTotal: data.overview.paymentsThisMonthTotal,
-              paymentsThisMonthPage: data.overview.paymentsThisMonthPage,
-              paymentsThisMonthPageSize: data.overview.paymentsThisMonthPageSize
+              paymentsThisMonth: nextOverview.paymentsThisMonth,
+              paymentsThisMonthHasMore: nextOverview.paymentsThisMonthHasMore,
+              paymentsThisMonthTotal: nextOverview.paymentsThisMonthTotal,
+              paymentsThisMonthPage: nextOverview.paymentsThisMonthPage,
+              paymentsThisMonthPageSize: nextOverview.paymentsThisMonthPageSize
             }
-          : data.overview
+          : nextOverview
       );
     } finally {
       if (reqId === paymentsReqSeq.current) {
@@ -178,17 +190,18 @@ export default function FinancialOverviewPanel() {
       if (reqId !== pendingReqSeq.current || !data.success || !data.overview) {
         return;
       }
+      const nextOverview = data.overview;
       setOverview((prev) =>
         prev
           ? {
               ...prev,
-              pendingMembers: data.overview.pendingMembers,
-              pendingMembersHasMore: data.overview.pendingMembersHasMore,
-              pendingMembersPage: data.overview.pendingMembersPage,
-              pendingMembersPageSize: data.overview.pendingMembersPageSize,
-              pendingSummary: data.overview.pendingSummary
+              pendingMembers: nextOverview.pendingMembers,
+              pendingMembersHasMore: nextOverview.pendingMembersHasMore,
+              pendingMembersPage: nextOverview.pendingMembersPage,
+              pendingMembersPageSize: nextOverview.pendingMembersPageSize,
+              pendingSummary: nextOverview.pendingSummary
             }
-          : data.overview
+          : nextOverview
       );
     } finally {
       if (reqId === pendingReqSeq.current) {
@@ -198,40 +211,41 @@ export default function FinancialOverviewPanel() {
   }, [year, month, selectedBranchId, pendingPage, pendingPageSize]);
 
   useEffect(() => {
-    if (!overview) {
+    if (!overviewReady) {
       return;
     }
     void loadPaymentsPage();
-  }, [paymentsPage, paymentsPageSize, loadPaymentsPage]);
+  }, [paymentsPage, paymentsPageSize, loadPaymentsPage, overviewReady]);
 
   useEffect(() => {
-    if (!overview) {
+    if (!overviewReady) {
       return;
     }
     void loadPendingPage();
-  }, [pendingPage, pendingPageSize, loadPendingPage]);
+  }, [pendingPage, pendingPageSize, loadPendingPage, overviewReady]);
 
   const loadRevenueTrend = useCallback(async () => {
     const reqId = ++revenueTrendReqSeq.current;
     setLoadingRevenueTrend(true);
     try {
-      const requests = Array.from({ length: 12 }, (_, i) => {
-        const monthValue = i + 1;
-        const params: Record<string, string | number> = { year, month: monthValue };
-        if (selectedBranchId) {
-          params.branchId = selectedBranchId;
-        }
-        return apiClient.get<FinanceOverviewResponse>("/gym/finance/overview", { params });
-      });
-
-      const results = await Promise.all(requests);
+      const params: Record<string, string | number> = { year };
+      if (selectedBranchId) {
+        params.branchId = selectedBranchId;
+      }
+      const cacheKey = `finance-revenue-trend:${year}:${selectedBranchId || "all"}`;
+      const data = await fetchCached(
+        cacheKey,
+        async () => (await apiClient.get<RevenueYearTrendResponse>("/gym/finance/revenue-trend", { params })).data,
+        20_000
+      );
       if (reqId !== revenueTrendReqSeq.current) {
         return;
       }
-      const nextData = results.map((result, index) => ({
+      const trendMap = new Map((data.trend ?? []).map((item) => [item.month, item.amount]));
+      const nextData = Array.from({ length: 12 }, (_, index) => ({
         month: index + 1,
-        label: MONTH_SHORT[index],
-        amount: result.data.success && result.data.overview ? result.data.overview.totals.revenue : 0,
+        label: MONTH_SHORT[index] ?? String(index + 1),
+        amount: trendMap.get(index + 1) ?? 0,
         year
       }));
       setRevenueTrendData(nextData);
@@ -314,12 +328,17 @@ export default function FinancialOverviewPanel() {
           <Card loading={loadingOverview} styles={{ body: { padding: 20 } }}>
             <Space align="start" size="middle" style={{ width: "100%" }}>
               {kpiIconWrap("#22c55e", <RiseOutlined />)}
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <Text type="secondary">Revenue</Text>
                 <Statistic
                   value={overview?.totals.revenue ?? 0}
                   formatter={(v) => formatInr(Number(v))}
-                  valueStyle={{ fontSize: 22, fontWeight: 600 }}
+                  valueStyle={{
+                    fontSize: "clamp(20px, 2.1vw, 28px)",
+                    fontWeight: 600,
+                    lineHeight: 1.2,
+                    wordBreak: "break-word"
+                  }}
                 />
               </div>
             </Space>
@@ -329,12 +348,17 @@ export default function FinancialOverviewPanel() {
           <Card loading={loadingOverview} styles={{ body: { padding: 20 } }}>
             <Space align="start" size="middle" style={{ width: "100%" }}>
               {kpiIconWrap("#f97316", <ClockCircleOutlined />)}
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <Text type="secondary">Overdue amount</Text>
                 <Statistic
                   value={overview?.totals.overdue ?? 0}
                   formatter={(v) => formatInr(Number(v))}
-                  valueStyle={{ fontSize: 22, fontWeight: 600 }}
+                  valueStyle={{
+                    fontSize: "clamp(20px, 2.1vw, 28px)",
+                    fontWeight: 600,
+                    lineHeight: 1.2,
+                    wordBreak: "break-word"
+                  }}
                 />
               </div>
             </Space>
@@ -344,12 +368,17 @@ export default function FinancialOverviewPanel() {
           <Card loading={loadingOverview} styles={{ body: { padding: 20 } }}>
             <Space align="start" size="middle" style={{ width: "100%" }}>
               {kpiIconWrap("#ef4444", <WalletOutlined />)}
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <Text type="secondary">Expenses</Text>
                 <Statistic
                   value={overview?.totals.expenses ?? 0}
                   formatter={(v) => formatInr(Number(v))}
-                  valueStyle={{ fontSize: 22, fontWeight: 600 }}
+                  valueStyle={{
+                    fontSize: "clamp(20px, 2.1vw, 28px)",
+                    fontWeight: 600,
+                    lineHeight: 1.2,
+                    wordBreak: "break-word"
+                  }}
                 />
               </div>
             </Space>
@@ -482,6 +511,8 @@ export default function FinancialOverviewPanel() {
                   },
                   showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} payments`
                 }}
+                scroll={{ x: 560 }}
+                tableLayout="fixed"
               />
             ) : (
               <Empty description="No payments this month" />
@@ -573,6 +604,8 @@ export default function FinancialOverviewPanel() {
                     },
                     showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} members`
                   }}
+                  scroll={{ x: 520 }}
+                  tableLayout="fixed"
                 />
               </>
             ) : (

@@ -29,6 +29,7 @@ import {
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import apiClient from "@/utils/api";
+import { fetchCached } from "@/utils/queryCache";
 import { formatInr } from "@/utils/formatCurrency";
 import type {
   FinanceOverviewPayload,
@@ -84,6 +85,10 @@ type MemberJoinTrendResponse = {
   trend?: Array<{ month: number; count: number }>;
   period?: { year: number };
   message?: string;
+};
+type RevenueYearTrendResponse = {
+  success: boolean;
+  trend?: Array<{ month: number; amount: number }>;
 };
 
 function kpiIconWrap(bg: string, icon: React.ReactNode) {
@@ -147,7 +152,12 @@ export default function DashboardPanel() {
       if (selectedBranchId) {
         params.branchId = selectedBranchId;
       }
-      const { data } = await apiClient.get<FinanceOverviewResponse>("/gym/finance/overview", { params });
+      const cacheKey = `finance-overview:${year}:${month}:${selectedBranchId || "all"}`;
+      const data = await fetchCached(
+        cacheKey,
+        async () => (await apiClient.get<FinanceOverviewResponse>("/gym/finance/overview", { params })).data,
+        20_000
+      );
       if (reqId !== overviewReqSeq.current) {
         return;
       }
@@ -177,23 +187,24 @@ export default function DashboardPanel() {
     const reqId = ++revenueTrendReqSeq.current;
     setLoadingRevenueTrend(true);
     try {
-      const requests = Array.from({ length: 12 }, (_, i) => {
-        const monthValue = i + 1;
-        const params: Record<string, string | number> = { year, month: monthValue };
-        if (selectedBranchId) {
-          params.branchId = selectedBranchId;
-        }
-        return apiClient.get<FinanceOverviewResponse>("/gym/finance/overview", { params });
-      });
-
-      const results = await Promise.all(requests);
+      const params: Record<string, string | number> = { year };
+      if (selectedBranchId) {
+        params.branchId = selectedBranchId;
+      }
+      const cacheKey = `finance-revenue-trend:${year}:${selectedBranchId || "all"}`;
+      const data = await fetchCached(
+        cacheKey,
+        async () => (await apiClient.get<RevenueYearTrendResponse>("/gym/finance/revenue-trend", { params })).data,
+        20_000
+      );
       if (reqId !== revenueTrendReqSeq.current) {
         return;
       }
-      const nextData = results.map((result, index) => ({
+      const trendMap = new Map((data.trend ?? []).map((item) => [item.month, item.amount]));
+      const nextData = Array.from({ length: 12 }, (_, index) => ({
         month: index + 1,
-        label: MONTH_SHORT[index],
-        amount: result.data.success && result.data.overview ? result.data.overview.totals.revenue : 0,
+        label: MONTH_SHORT[index] ?? String(index + 1),
+        amount: trendMap.get(index + 1) ?? 0,
         year
       }));
       setRevenueTrendData(nextData);
@@ -510,6 +521,8 @@ export default function DashboardPanel() {
                 pagination={false}
                 columns={pendingColumns}
                 dataSource={pendingPreview}
+                scroll={{ x: 560 }}
+                tableLayout="fixed"
               />
             ) : (
               <Empty description="No pending members in this list" />
@@ -561,6 +574,8 @@ export default function DashboardPanel() {
                 pagination={false}
                 columns={paymentsColumns}
                 dataSource={paymentsPreview}
+                scroll={{ x: 520 }}
+                tableLayout="fixed"
               />
             ) : (
               <Empty description="No payments this period" />

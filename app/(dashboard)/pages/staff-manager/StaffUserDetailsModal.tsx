@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Button, Descriptions, Modal, Pagination, Table, Tabs, Tag, Typography } from "antd";
+import { Button, Descriptions, Divider, Modal, Pagination, Table, Tabs, Tag, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import apiClient from "@/utils/api";
@@ -140,6 +140,7 @@ export default function StaffUserDetailsModal({ open, userId, onClose }: Props) 
           Close
         </Button>
       ]}
+      styles={{ body: { maxHeight: "70vh", overflowY: "auto" } }}
     >
       <Tabs
         activeKey={activeTab}
@@ -149,26 +150,38 @@ export default function StaffUserDetailsModal({ open, userId, onClose }: Props) 
             key: "details",
             label: "Details",
             children: user ? (
-              <Descriptions bordered size="small" column={1}>
-                <Descriptions.Item label="Name">{user.fullName}</Descriptions.Item>
-                <Descriptions.Item label="Phone">{user.phone}</Descriptions.Item>
-                <Descriptions.Item label="Role">
-                  <Tag color={user.role === "manager" ? "blue" : "default"}>
-                    {user.role === "manager" ? "Manager" : "Staff"}
-                  </Tag>
-                </Descriptions.Item>
-                <Descriptions.Item label="Status">
-                  <Tag color={user.status === "active" ? "green" : "default"}>
-                    {user.status === "active" ? "Active" : "Inactive"}
-                  </Tag>
-                </Descriptions.Item>
-                <Descriptions.Item label="Lifetime Salary">
-                  {formatInrWhole(user.salarySummary?.lifetimeTotal ?? 0)}
-                </Descriptions.Item>
-                <Descriptions.Item label="Current Month Salary">
-                  {formatInrWhole(user.salarySummary?.currentMonthTotal ?? 0)}
-                </Descriptions.Item>
-              </Descriptions>
+              <>
+                <Descriptions bordered size="small" column={1}>
+                  <Descriptions.Item label="Name">{user.fullName}</Descriptions.Item>
+                  <Descriptions.Item label="Phone">{user.phone}</Descriptions.Item>
+                  <Descriptions.Item label="Role">
+                    <Tag color={user.role === "manager" ? "blue" : "default"}>
+                      {user.role === "manager" ? "Manager" : "Staff"}
+                    </Tag>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Status">
+                    <Tag color={user.status === "active" ? "green" : "default"}>
+                      {user.status === "active" ? "Active" : "Inactive"}
+                    </Tag>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Lifetime Salary">
+                    {formatInrWhole(user.salarySummary?.lifetimeTotal ?? 0)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Current Month Salary">
+                    {formatInrWhole(user.salarySummary?.currentMonthTotal ?? 0)}
+                  </Descriptions.Item>
+                </Descriptions>
+                <Divider style={{ margin: "12px 0" }} />
+                <Text strong style={{ display: "block", marginBottom: 8 }}>
+                  Personal details
+                </Text>
+                <Descriptions bordered size="small" column={1}>
+                  <Descriptions.Item label="Address">{user.address?.trim() ? user.address : "—"}</Descriptions.Item>
+                  <Descriptions.Item label="Aadhaar Number">
+                    {user.aadhaarNumber?.trim() ? user.aadhaarNumber : "—"}
+                  </Descriptions.Item>
+                </Descriptions>
+              </>
             ) : (
               <Text type="secondary">{detailsLoading ? "Loading details..." : "No details available."}</Text>
             )
@@ -191,6 +204,8 @@ export default function StaffUserDetailsModal({ open, userId, onClose }: Props) 
                         ? "Open this tab to load transactions."
                         : "No transactions found."
                   }}
+                  scroll={{ x: 620 }}
+                  tableLayout="fixed"
                 />
                 <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
                   <Pagination

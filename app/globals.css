@@ -52,3 +52,20 @@ a {
 .appbar-branch-select-popup.ant-select-dropdown {
   border: none !important;
 }
+
+/* Keep dashboard tables readable on narrow screens:
+   never split words letter-by-letter; use horizontal scroll instead. */
+.ant-table-wrapper .ant-table-cell,
+.ant-table-wrapper .ant-table-thead > tr > th,
+.ant-table-wrapper .ant-table-tbody > tr > td {
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+@media (max-width: 992px) {
+  .ant-table-wrapper .ant-table-cell,
+  .ant-table-wrapper .ant-table-thead > tr > th,
+  .ant-table-wrapper .ant-table-tbody > tr > td {
+    white-space: nowrap;
+  }
+}

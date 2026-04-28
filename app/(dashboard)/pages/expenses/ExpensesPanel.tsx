@@ -20,7 +20,7 @@ import {
   theme
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { FilterOutlined, PlusOutlined } from "@ant-design/icons";
+import { DeleteOutlined, EditOutlined, FilterOutlined, PlusOutlined } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
 import apiClient from "@/utils/api";
 import { WIDE_DRAWER_WIDTH } from "@/utils/modalWidths";
@@ -344,11 +344,11 @@ export default function ExpensesPanel() {
     clearDirty("expenses-expense-drawer");
   };
 
-  const openEditExpense = (row: ExpenseRow) => {
+  const openEditExpense = useCallback((row: ExpenseRow) => {
     setEditingExpense(row);
     setExpenseDrawerOpen(true);
     clearDirty("expenses-expense-drawer");
-  };
+  }, [clearDirty]);
 
   useEffect(() => {
     if (!expenseDrawerOpen) {
@@ -458,7 +458,7 @@ export default function ExpensesPanel() {
     }
   };
 
-  const deleteExpense = async (row: ExpenseRow) => {
+  const deleteExpense = useCallback(async (row: ExpenseRow) => {
     try {
       const { data } = await apiClient.delete<{ success: boolean; message?: string }>(
         `/gym/expenses/${row.id}`
@@ -473,9 +473,9 @@ export default function ExpensesPanel() {
     } catch {
       message.error("Could not delete expense.");
     }
-  };
+  }, [message, loadExpenses, loadCategorySummary]);
 
-  const confirmDeleteExpense = (row: ExpenseRow) => {
+  const confirmDeleteExpense = useCallback((row: ExpenseRow) => {
     modal.confirm({
       title: "Delete this expense?",
       okText: "Delete",
@@ -484,7 +484,7 @@ export default function ExpensesPanel() {
         await deleteExpense(row);
       }
     });
-  };
+  }, [modal, deleteExpense]);
 
   const openAddCategory = () => {
     setEditingCategory(null);
@@ -622,62 +622,74 @@ export default function ExpensesPanel() {
     });
   };
 
-  const expenseColumns: ColumnsType<ExpenseRow> = [
-    {
-      title: "Date",
-      dataIndex: "date",
-      key: "date",
-      render: (d: string) => dayjs(d).format("DD-MM-YYYY")
-    },
-    {
-      title: "Amount",
-      dataIndex: "amount",
-      key: "amount",
-      render: (a: number) => formatInr(a)
-    },
-    {
-      title: "Expense Type",
-      key: "expenseType",
-      render: (_, row) =>
-        row.categoryName ?? row.expenseTypeLabel ?? "Category"
-    },
-    {
-      title: "Branch",
-      key: "branch",
-      render: (_, row) => row.branchName ?? "—"
-    },
-    {
-      title: "Employee",
-      key: "employee",
-      render: (_, row) => row.employeeName ?? "—"
-    },
-    {
-      title: "Category",
-      key: "category",
-      render: (_, row) => row.categoryName ?? "—"
-    },
-    {
-      title: "Notes / Description",
-      dataIndex: "notes",
-      key: "notes",
-      ellipsis: true
-    },
-    {
-      title: "Actions",
-      key: "actions",
-      width: 140,
-      render: (_, row) => (
-        <Space>
-          <Button type="link" size="small" onClick={() => openEditExpense(row)}>
-            Edit
-          </Button>
-          <Button type="link" size="small" danger onClick={() => confirmDeleteExpense(row)}>
-            Delete
-          </Button>
-        </Space>
-      )
-    }
-  ];
+  const expenseColumns: ColumnsType<ExpenseRow> = useMemo(
+    () => [
+      {
+        title: "Date",
+        dataIndex: "date",
+        key: "date",
+        render: (d: string) => dayjs(d).format("DD-MM-YYYY")
+      },
+      {
+        title: "Amount",
+        dataIndex: "amount",
+        key: "amount",
+        render: (a: number) => formatInr(a)
+      },
+      {
+        title: "Expense Type",
+        key: "expenseType",
+        render: (_, row) => row.categoryName ?? row.expenseTypeLabel ?? "Category"
+      },
+      {
+        title: "Branch",
+        key: "branch",
+        render: (_, row) => row.branchName ?? "—"
+      },
+      {
+        title: "Employee",
+        key: "employee",
+        render: (_, row) => row.employeeName ?? "—"
+      },
+      {
+        title: "Category",
+        key: "category",
+        render: (_, row) => row.categoryName ?? "—"
+      },
+      {
+        title: "Notes / Description",
+        dataIndex: "notes",
+        key: "notes",
+        ellipsis: true
+      },
+      {
+        title: "Actions",
+        key: "actions",
+        width: 140,
+        fixed: "right",
+        render: (_, row) => (
+          <Space>
+            <Button
+              type="link"
+              size="small"
+              icon={<EditOutlined />}
+              aria-label="Edit expense"
+              onClick={() => openEditExpense(row)}
+            />
+            <Button
+              type="link"
+              size="small"
+              danger
+              icon={<DeleteOutlined />}
+              aria-label="Delete expense"
+              onClick={() => confirmDeleteExpense(row)}
+            />
+          </Space>
+        )
+      }
+    ],
+    [openEditExpense, confirmDeleteExpense]
+  );
 
   const visibleExpenseColumns = useMemo(
     () =>
@@ -941,6 +953,8 @@ export default function ExpensesPanel() {
                       />
                     )
                   }}
+                  scroll={{ x: 1100, y: "calc(100vh - 120px)" }}
+                  tableLayout="fixed"
                 />
                 <div style={{ marginTop: 24 }}>
                   <div
@@ -987,6 +1001,8 @@ export default function ExpensesPanel() {
                         />
                       )
                     }}
+                    scroll={{ x: 520, y: "calc(100vh - 120px)" }}
+                    tableLayout="fixed"
                   />
                 </div>
               </>
@@ -1021,6 +1037,8 @@ export default function ExpensesPanel() {
                       />
                     )
                   }}
+                  scroll={{ x: 760, y: "calc(100vh - 120px)" }}
+                  tableLayout="fixed"
                 />
               </>
             )

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import {
   App,
   Layout,
@@ -24,7 +24,6 @@ import {
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import {
   logoutAsync,
-  patchSessionToken,
   selectSession,
   setSession
 } from "@/redux/features/auth/authSlice";
@@ -101,15 +100,16 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
 
   const gym = session?.gym;
   const activeBranch = session?.activeBranch;
-  const branches = gym?.branches ?? [];
+  const branches = gym?.branches;
   const gymId = session?.user?.defaults?.gymId ?? gym?.id ?? "";
   const membership = session?.user?.associatedGyms?.find((g) => g.gymId === gymId);
   const canOpenSettings = hasFeature(session, FEATURES.SETTINGS);
   const userRole = String(session?.rbac?.role ?? membership?.gymRole ?? "").toLowerCase();
   const isOwner = userRole === "owner";
   const assignedBranchIds = useMemo(() => {
+    const allBranches = branches ?? [];
     if (isOwner) {
-      return branches.map((branch) => branch.id);
+      return allBranches.map((branch) => branch.id);
     }
     const fromMembership = (membership?.branches ?? []).map((entry) => entry.branchId);
     if (fromMembership.length > 0) {
@@ -119,7 +119,7 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
     return fallback ? [fallback] : [];
   }, [isOwner, branches, membership?.branches, session?.user?.defaults?.branchId, activeBranch?.id]);
   const visibleBranches = useMemo(
-    () => branches.filter((branch) => assignedBranchIds.includes(branch.id)),
+    () => (branches ?? []).filter((branch) => assignedBranchIds.includes(branch.id)),
     [branches, assignedBranchIds]
   );
   const selectedBranchId = useMemo(() => {
@@ -202,8 +202,7 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
 
   const onBranchChange = async (branchId: string) => {
     try {
-      const res = await apiClient.patch<{ token: string }>("/auth/branch", { branchId });
-      dispatch(patchSessionToken({ token: res.data.token }));
+      await apiClient.patch("/auth/branch", { branchId });
       await refreshSession(dispatch);
     } catch {
       message.error("Could not switch branch.");

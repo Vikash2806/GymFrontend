@@ -75,6 +75,7 @@ export default function ExpensesFilterModal({
           Search
         </Button>
       ]}
+      styles={{ body: { maxHeight: "70vh", overflowY: "auto" } }}
     >
       <Space direction="vertical" style={{ width: "100%" }} size={12}>
         <Row gutter={[12, 12]}>
@@ -130,7 +131,8 @@ export default function ExpensesFilterModal({
                 if (!value?.[0] || !value?.[1]) {
                   return;
                 }
-                setDraft((prev) => ({ ...prev, dateRange: [value[0], value[1]] }));
+                const [start, end] = value;
+                setDraft((prev) => ({ ...prev, dateRange: [start, end] }));
               }}
               style={{ width: "100%" }}
             />

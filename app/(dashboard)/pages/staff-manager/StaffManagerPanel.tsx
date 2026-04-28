@@ -19,7 +19,7 @@ import {
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { TableProps } from "antd";
-import { DeleteOutlined, EditOutlined, UserAddOutlined } from "@ant-design/icons";
+import { DeleteOutlined, EditOutlined, EyeOutlined, UserAddOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import apiClient from "@/utils/api";
 import { WIDE_MODAL_WIDTH } from "@/utils/modalWidths";
@@ -56,6 +56,8 @@ type FormValues = {
   email?: string;
   password?: string;
   branchIds: string[];
+  address?: string;
+  aadhaarNumber?: string;
   status?: "active" | "inactive";
 };
 
@@ -239,6 +241,8 @@ export default function StaffManagerPanel() {
             ? editing.branches.map((branch) => branch.id)
             : [editing.branch.id],
         status: editing.status,
+        address: editing.address ?? "",
+        aadhaarNumber: editing.aadhaarNumber ?? "",
         password: undefined
       });
       setModalDirty(false);
@@ -252,6 +256,8 @@ export default function StaffManagerPanel() {
         lastName: "",
         phone: "",
         email: undefined,
+        address: "",
+        aadhaarNumber: "",
         password: ""
       });
       setModalDirty(false);
@@ -277,6 +283,8 @@ export default function StaffManagerPanel() {
           mobileNumber: e164,
           role: values.role,
           branchIds: values.branchIds,
+          address: String(values.address ?? "").trim(),
+          aadhaarNumber: String(values.aadhaarNumber ?? "").replace(/\D/g, ""),
           status: values.status ?? "active"
         };
         const em = String(values.email ?? "").trim();
@@ -301,7 +309,9 @@ export default function StaffManagerPanel() {
           mobileNumber: e164,
           password: values.password?.trim() ?? "",
           role: values.role,
-          branchIds: values.branchIds
+          branchIds: values.branchIds,
+          address: String(values.address ?? "").trim(),
+          aadhaarNumber: String(values.aadhaarNumber ?? "").replace(/\D/g, "")
         };
         if (emailNorm) {
           createBody.email = emailNorm;
@@ -415,12 +425,13 @@ export default function StaffManagerPanel() {
           <Button
             type="link"
             size="small"
+            icon={<EyeOutlined />}
             onClick={() => {
               setDetailsUserId(record.id);
               setDetailsOpen(true);
             }}
+            aria-label="View user details"
           >
-            View Details
           </Button>
           <Button
             type="link"
@@ -531,7 +542,8 @@ export default function StaffManagerPanel() {
             />
           )
         }}
-        scroll={{ x: 960 }}
+        scroll={{ x: 960, y: "calc(100vh - 120px)" }}
+        tableLayout="fixed"
       />
 
       <Modal
@@ -554,6 +566,7 @@ export default function StaffManagerPanel() {
         confirmLoading={submitting}
         destroyOnHidden
         width={WIDE_MODAL_WIDTH}
+        styles={{ body: { maxHeight: "70vh", overflowY: "auto" } }}
       >
         <Form
           form={form}
@@ -673,6 +686,32 @@ export default function StaffManagerPanel() {
                 label: `${b.code} — ${b.name}`
               }))}
             />
+          </Form.Item>
+          <Typography.Title level={5} style={{ marginBottom: 12 }}>
+            Personal details
+          </Typography.Title>
+          <Form.Item name="address" label="Address">
+            <Input placeholder="Enter full address" maxLength={300} allowClear />
+          </Form.Item>
+          <Form.Item
+            name="aadhaarNumber"
+            label="Aadhaar Number"
+            getValueFromEvent={(e) => String(e?.target?.value ?? "").replace(/\D/g, "").slice(0, 12)}
+            rules={[
+              {
+                validator: async (_, value) => {
+                  const digits = String(value ?? "").replace(/\D/g, "");
+                  if (!digits) {
+                    return;
+                  }
+                  if (digits.length !== 12) {
+                    throw new Error("Aadhaar number must be exactly 12 digits");
+                  }
+                }
+              }
+            ]}
+          >
+            <Input placeholder="12-digit Aadhaar number" maxLength={12} />
           </Form.Item>
           {editing ? (
             <Form.Item name="status" label="Status" rules={[{ required: true }]}>

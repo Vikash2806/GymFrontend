@@ -104,8 +104,8 @@ export function hasFeature(session: SessionPayload | null, permission: Permissio
 export const hasPermission = hasFeature;
 
 const FEATURE_ROUTE_ORDER: Array<{ feature: FeatureKey; route: string }> = [
-  { feature: FEATURES.DASHBOARD, route: "/pages/dashboard" },
   { feature: FEATURES.MEMBER_MANAGEMENT, route: "/pages/members" },
+  { feature: FEATURES.DASHBOARD, route: "/pages/dashboard" },
   { feature: FEATURES.BILLING_DASHBOARD, route: "/pages/billing" },
   { feature: FEATURES.FINANCIAL_OVERVIEW, route: "/pages/finance" },
   { feature: FEATURES.EXPENSES, route: "/pages/expenses" },

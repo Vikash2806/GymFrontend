@@ -232,7 +232,7 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
     return () => {
       cancelled = true;
     };
-  }, [open, member?._id, activeTab, historyPage]);
+  }, [open, member, member?._id, activeTab, historyPage]);
 
   useEffect(() => {
     if (!open || !member || activeTab !== "transactions") {
@@ -272,7 +272,7 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
     return () => {
       cancelled = true;
     };
-  }, [open, member?._id, activeTab, paymentsPage]);
+  }, [open, member, member?._id, activeTab, paymentsPage]);
 
   return (
     <Modal
@@ -285,6 +285,7 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
         </Button>
       ]}
       width={WIDE_MODAL_WIDTH}
+      styles={{ body: { maxHeight: "70vh", overflowY: "auto" } }}
     >
       {member ? (
         <>
@@ -377,6 +378,7 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
                           dataSource={membershipHistory}
                           pagination={false}
                           scroll={{ x: 760 }}
+                          tableLayout="fixed"
                         />
                         <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
                           <Pagination
@@ -411,6 +413,7 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
                           dataSource={payments}
                           pagination={false}
                           scroll={{ x: 700 }}
+                          tableLayout="fixed"
                         />
                         <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
                           <Pagination

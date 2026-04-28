@@ -11,6 +11,8 @@ export type StaffUserRow = {
     currentMonthTotal: number;
     currentMonthKey: string;
   };
+  address?: string;
+  aadhaarNumber?: string;
   status: "active" | "inactive";
   createdAt: string;
 };

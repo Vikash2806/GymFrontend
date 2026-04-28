@@ -6,7 +6,6 @@ import {
   Button,
   Card,
   Col,
-  Divider,
   Flex,
   Form,
   Input,
@@ -29,7 +28,6 @@ import {
   EnvironmentOutlined,
   HomeOutlined,
   PhoneOutlined,
-  PlusOutlined,
   TeamOutlined,
 } from "@ant-design/icons";
 import apiClient from "@/utils/api";
@@ -38,7 +36,7 @@ import type { BranchRow, BranchesListResponse, BranchMutationResponse } from "@/
 import { isValidIndianMobile, stripToIndianMobileDigits, toE164IndianMobile } from "@/utils/mobileValidation";
 import { getCityOptions, getCountryOptions, getStateOptions } from "@/utils/options";
 import { useAppDispatch } from "@/redux/hooks";
-import { patchSessionToken, setSession } from "@/redux/features/auth/authSlice";
+import { setSession } from "@/redux/features/auth/authSlice";
 import type { SessionPayload } from "@/redux/features/auth/sessionTypes";
 import ExportButton from "@/app/components/Export/ExportButton";
 import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
@@ -230,12 +228,7 @@ export default function BranchesPanel() {
       setModalDirty(false);
       clearDirty("branches-modal");
     }
-  }, [modalOpen, editing, form, clearDirty]);
-
-  const openCreate = () => {
-    setEditing(null);
-    setModalOpen(true);
-  };
+  }, [modalOpen, editing, form, clearDirty, countryOptions, stateOptions, cityOptions]);
 
   const openEdit = (record: BranchRow) => {
     setEditing(record);
@@ -273,9 +266,6 @@ export default function BranchesPanel() {
           return;
         }
         message.success("Branch updated.");
-        if (data.token) {
-          dispatch(patchSessionToken({ token: data.token }));
-        }
         await refreshSession(dispatch);
       } else {
         const { data } = await apiClient.post<BranchMutationResponse>("/gym/branches", payload);
@@ -309,9 +299,6 @@ export default function BranchesPanel() {
         return;
       }
       message.success("Branch deleted.");
-      if (data.token) {
-        dispatch(patchSessionToken({ token: data.token }));
-      }
       await refreshSession(dispatch);
       await load();
     } catch {
@@ -323,6 +310,8 @@ export default function BranchesPanel() {
     {
       title: "Branch",
       key: "branch",
+      width: 220,
+      ellipsis: true,
       render: (_, record) => (
         <Space align="center">
           <Flex
@@ -346,6 +335,7 @@ export default function BranchesPanel() {
     {
       title: "Address",
       key: "address",
+      width: 280,
       ellipsis: true,
       render: (_, record) => (
         <Space align="start">
@@ -357,6 +347,7 @@ export default function BranchesPanel() {
     {
       title: "Contact",
       key: "contact",
+      width: 160,
       render: (_, record) => (
         <Space>
           <PhoneOutlined style={{ color: token.colorTextSecondary }} />
@@ -367,6 +358,7 @@ export default function BranchesPanel() {
     {
       title: "Manager",
       key: "managers",
+      width: 220,
       render: (_, record) =>
         record.managers.length > 0 ? (
           <Space direction="vertical" size={0}>
@@ -406,6 +398,7 @@ export default function BranchesPanel() {
       title: "Actions",
       key: "actions",
       width: 100,
+      fixed: "right",
       render: (_, record) => (
         <Space size="small">
           <Button
@@ -494,7 +487,8 @@ export default function BranchesPanel() {
                 setPageSize(ps);
               }
             }}
-            scroll={{ x: true }}
+            scroll={{ x: 1100, y: "calc(100vh - 120px)" }}
+            tableLayout="fixed"
           />
         </Card>
       </div>
@@ -545,6 +539,7 @@ export default function BranchesPanel() {
           </Button>
         ]}
         width={WIDE_MODAL_WIDTH}
+        styles={{ body: { maxHeight: "70vh", overflowY: "auto" } }}
       >
         <Form
           form={form}

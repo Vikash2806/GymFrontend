@@ -2,7 +2,8 @@ import axios from "axios";
 
 const apiClient = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5050/api",
-  timeout: 15000
+  timeout: 15000,
+  withCredentials: true
 });
 
 apiClient.interceptors.request.use((config) => {
@@ -17,12 +18,8 @@ apiClient.interceptors.request.use((config) => {
 
   try {
     const parsed = JSON.parse(raw) as {
-      token?: string;
       user?: { defaults?: { gymId?: string; branchId?: string } };
     };
-    if (parsed?.token) {
-      config.headers.Authorization = `Bearer ${parsed.token}`;
-    }
     const gymId = parsed?.user?.defaults?.gymId;
     const branchId = parsed?.user?.defaults?.branchId;
     if (gymId) {

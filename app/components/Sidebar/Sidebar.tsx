@@ -7,19 +7,21 @@ import {
   SettingOutlined,
   ArrowLeftOutlined,
   ArrowRightOutlined,
+  AppstoreOutlined,
   BankOutlined,
   TeamOutlined,
   MoneyCollectOutlined,
   UserAddOutlined,
+  UserOutlined,
   FundOutlined,
   WalletOutlined,
   SwapOutlined
 } from "@ant-design/icons";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { MenuProps } from "antd";
 import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
-import { FEATURES, hasFeature } from "@/utils/permissions";
+import { FEATURES, getFirstAccessibleRoute, hasFeature } from "@/utils/permissions";
 import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
 
 const { Sider } = Layout;
@@ -61,6 +63,29 @@ const mainMenuItems: MenuItem[] = [
   { key: "Settings", label: "Settings", icon: <SettingOutlined />, route: "/pages/settings" }
 ];
 
+const settingsMenuItems: MenuItem[] = [
+  {
+    key: "organization",
+    label: "Organization",
+    icon: <UserOutlined />,
+    children: [
+      { key: "settings-profile", label: "Profile Settings", route: "/pages/settings?tab=profile" }
+    ]
+  },
+  {
+    key: "master",
+    label: "Master Settings",
+    icon: <SettingOutlined />,
+    children: [{ key: "settings-gym", label: "Gym Settings", route: "/pages/settings?tab=gym" }]
+  },
+  {
+    key: "settings-rbac",
+    label: "Roles & Permissions",
+    icon: <AppstoreOutlined />,
+    route: "/admin/rbac"
+  }
+];
+
 const flattenRoutes = (items: MenuItem[], map: Record<string, string>) => {
   items.forEach((item) => {
     if (item.route) {
@@ -85,6 +110,7 @@ const toMenuData = (items: MenuItem[]): NonNullable<MenuProps["items"]> =>
 
 export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const { token } = theme.useToken();
   const { confirmNavigation } = useUnsavedChanges();
@@ -93,6 +119,9 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [openKeys, setOpenKeys] = useState<string[]>([]);
   const [collapsed, setCollapsed] = useState(false);
+  const isSettingsRoute = pathname.startsWith("/pages/settings");
+  const search = searchParams.toString();
+  const currentRoute = search ? `${pathname}?${search}` : pathname;
 
   const mainMenuItemsFiltered = useMemo(() => {
     return mainMenuItems.filter((item) => {
@@ -130,23 +159,58 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
     });
   }, [session]);
 
+  const settingsMenuItemsFiltered = useMemo(() => {
+    return settingsMenuItems.filter((item) => {
+      if (item.key === "settings-rbac") {
+        return hasFeature(session, FEATURES.RBAC_SETTINGS);
+      }
+      return true;
+    });
+  }, [session]);
+
   const routeMap = useMemo(() => {
     const map: Record<string, string> = {};
-    flattenRoutes(mainMenuItemsFiltered, map);
+    const menuSource = isSettingsRoute
+      ? settingsMenuItemsFiltered
+      : mainMenuItemsFiltered;
+    flattenRoutes(menuSource, map);
     return map;
-  }, [mainMenuItemsFiltered]);
+  }, [isSettingsRoute, mainMenuItemsFiltered, settingsMenuItemsFiltered]);
+
+  const parentMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    const walk = (items: MenuItem[], parentKey?: string) => {
+      items.forEach((item) => {
+        if (parentKey) {
+          map[item.key] = parentKey;
+        }
+        if (item.children) {
+          walk(item.children, item.key);
+        }
+      });
+    };
+    walk(isSettingsRoute ? settingsMenuItemsFiltered : mainMenuItemsFiltered);
+    return map;
+  }, [isSettingsRoute, mainMenuItemsFiltered, settingsMenuItemsFiltered]);
 
   useEffect(() => {
-    const matched = Object.entries(routeMap).find(([, route]) => route === pathname);
+    const matched = Object.entries(routeMap).find(([, route]) => {
+      if (route === currentRoute || route === pathname) {
+        return true;
+      }
+      return route.startsWith("/pages/settings?") && pathname === "/pages/settings";
+    });
     if (matched) {
       setSelectedKeys([matched[0]]);
+      const nextParent = parentMap[matched[0]];
+      setOpenKeys(nextParent ? [nextParent] : []);
     }
-  }, [pathname, routeMap]);
+  }, [currentRoute, parentMap, pathname, routeMap]);
 
   const handleClick: MenuProps["onClick"] = (e) => {
     setSelectedKeys([e.key]);
     const targetRoute = routeMap[e.key];
-    if (!targetRoute || pathname === targetRoute) {
+    if (!targetRoute || currentRoute === targetRoute || pathname === targetRoute) {
       return;
     }
     confirmNavigation(() => router.push(targetRoute));
@@ -158,7 +222,15 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
     onCollapseChange?.(nextCollapsed);
   };
 
-  const menuData = toMenuData(mainMenuItemsFiltered);
+  const menuData = toMenuData(
+    isSettingsRoute ? settingsMenuItemsFiltered : mainMenuItemsFiltered
+  );
+
+  const navigateBackToMain = () => {
+    const firstRoute = getFirstAccessibleRoute(session);
+    const nextRoute = firstRoute === "/pages/settings" ? "/pages/dashboard" : firstRoute;
+    confirmNavigation(() => router.push(nextRoute));
+  };
 
   return (
     <Sider
@@ -175,13 +247,44 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
         transition: "width 0.3s ease"
       }}
     >
+      {isSettingsRoute ? (
+        <>
+          <div style={{ padding: "10px 12px 2px 12px", display: "flex", justifyContent: collapsed ? "center" : "flex-start" }}>
+            <Tooltip title="Back" placement="right">
+              <Button
+                type="text"
+                icon={<ArrowLeftOutlined />}
+                onClick={navigateBackToMain}
+                style={{ width: 32, height: 32 }}
+                aria-label="Back to main menu"
+              />
+            </Tooltip>
+          </div>
+          {!collapsed ? (
+            <div
+              style={{
+                padding: "4px 16px 8px 16px",
+                fontSize: 12,
+                letterSpacing: 1.1,
+                color: token.colorTextSecondary
+              }}
+            >
+              SETTINGS
+            </div>
+          ) : null}
+        </>
+      ) : null}
       <Menu
         mode="inline"
         selectedKeys={selectedKeys}
         openKeys={openKeys}
         onOpenChange={(keys) => setOpenKeys(keys)}
         onClick={handleClick}
-        style={{ height: "calc(100% - 80px)", borderRight: 0, background: token.colorBgContainer }}
+        style={{
+          height: isSettingsRoute ? (collapsed ? "calc(100% - 112px)" : "calc(100% - 136px)") : "calc(100% - 80px)",
+          borderRight: 0,
+          background: token.colorBgContainer
+        }}
         items={menuData}
       />
       <div
@@ -192,7 +295,10 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
           right: 0,
           padding: "16px",
           background: token.colorBgContainer,
-          borderTop: `1px solid ${token.colorBorder}`
+          borderTop: `1px solid ${token.colorBorder}`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center"
         }}
       >
         <Tooltip title={collapsed ? "Expand Sidebar" : "Collapse Sidebar"} placement="right">
@@ -200,7 +306,7 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
             type="text"
             icon={collapsed ? <ArrowRightOutlined /> : <ArrowLeftOutlined />}
             onClick={toggleCollapse}
-            style={{ width: "100%", height: "48px" }}
+            style={{ width: collapsed ? 40 : "100%", height: "48px" }}
           />
         </Tooltip>
       </div>

@@ -14,7 +14,6 @@ import {
   Input,
   InputNumber,
   Modal,
-  Popconfirm,
   Row,
   Select,
   Space,
@@ -22,12 +21,10 @@ import {
   Tag,
   Tooltip,
   Typography,
-  Upload,
   theme
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { TableProps } from "antd";
-import type { UploadFile } from "antd/es/upload/interface";
 import {
   CloseCircleOutlined,
   ClockCircleOutlined,
@@ -37,13 +34,10 @@ import {
   EyeOutlined,
   HomeOutlined,
   PhoneOutlined,
-  PlusOutlined,
-  QuestionCircleOutlined,
-  UploadOutlined
+  PlusOutlined
 } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
 import apiClient from "@/utils/api";
-import { WIDE_MODAL_WIDTH } from "@/utils/modalWidths";
 import type { Member } from "@/types/member";
 import type { MembershipPlan } from "@/types/membership";
 import { useAppSelector } from "@/redux/hooks";
@@ -150,16 +144,6 @@ type MemberLookupResponse = {
 };
 type SubscriptionCreateResponse = { success: boolean; message?: string };
 type SubscriptionPatchResponse = { success: boolean; message?: string };
-type SubscriptionHistoryItem = {
-  _id: string;
-  planName: string;
-  status: "active" | "expired" | "cancelled" | "paused";
-  startDate: string;
-  endDate: string;
-  paymentSummary: { totalAmount: number; paidAmount: number; pendingAmount: number; status: string };
-  createdAt: string;
-};
-type SubscriptionHistoryResponse = { success: boolean; subscriptions?: SubscriptionHistoryItem[]; message?: string };
 type MemberTableColumnKey = "member" | "status" | "phone" | "age" | "plan" | "paymentStatus" | "billing" | "actions";
 
 function ageFromDob(iso: string | null): string {
@@ -240,9 +224,12 @@ export type MembersPanelProps = {
 export default function MembersPanel({
   onMemberCountChange,
   onRequestCreateMembershipPlan,
-  createdPlanFromMemberships,
-  onCreatedPlanHandled
+  createdPlanFromMemberships: _createdPlanFromMemberships,
+  onCreatedPlanHandled: _onCreatedPlanHandled
 }: MembersPanelProps) {
+  void _createdPlanFromMemberships;
+  void _onCreatedPlanHandled;
+
   const { message, modal } = App.useApp();
   const { token } = theme.useToken();
   const session = useAppSelector(selectSession);
@@ -271,7 +258,6 @@ export default function MembersPanel({
   const [detailMember, setDetailMember] = useState<Member | null>(null);
   const [editing, setEditing] = useState<Member | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [avatarList, setAvatarList] = useState<UploadFile[]>([]);
   const [modalDirty, setModalDirty] = useState(false);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupMember, setLookupMember] = useState<Member | null>(null);
@@ -478,7 +464,6 @@ export default function MembersPanel({
   const openCreate = () => {
     setEditing(null);
     setNewMembershipTarget(null);
-    setAvatarList([]);
     setLookupMember(null);
     setLookupNote("");
     form.resetFields();
@@ -503,10 +488,9 @@ export default function MembersPanel({
     onRequestCreateMembershipPlan?.();
   };
 
-  const openEdit = async (record: Member) => {
+  const openEdit = useCallback(async (record: Member) => {
     setEditing(record);
     setNewMembershipTarget(null);
-    setAvatarList([]);
     setLookupMember(null);
     setLookupNote("");
     setModalOpen(true);
@@ -539,9 +523,6 @@ export default function MembersPanel({
       });
       setModalDirty(false);
       clearDirty("members-modal");
-      if (m.profile.profilePicture) {
-        setAvatarList([{ uid: "-1", name: "photo", status: "done", url: m.profile.profilePicture }]);
-      }
     } catch (e: unknown) {
       const msg =
         e && typeof e === "object" && "response" in e
@@ -552,20 +533,19 @@ export default function MembersPanel({
     } finally {
       setSubmitting(false);
     }
-  };
+  }, [message, form, canManageBranches, effectiveBranchId, cityOptions, stateOptions, countryOptions, clearDirty]);
 
-  const closeModal = () => {
+  const closeModal = useCallback(() => {
     setModalOpen(false);
     setEditing(null);
     setNewMembershipTarget(null);
     form.resetFields();
-    setAvatarList([]);
     setLookupMember(null);
     setLookupNote("");
     setLookupLoading(false);
     setModalDirty(false);
     clearDirty("members-modal");
-  };
+  }, [form, clearDirty]);
 
   const requestCloseModal = useCallback(() => {
     if (modalDirty) {
@@ -575,12 +555,11 @@ export default function MembersPanel({
       return;
     }
     closeModal();
-  }, [modalDirty, confirmNavigation]);
+  }, [modalDirty, confirmNavigation, closeModal]);
 
-  const openNewMembership = (record: Member) => {
+  const openNewMembership = useCallback((record: Member) => {
     setEditing(null);
     setNewMembershipTarget(record);
-    setAvatarList([]);
     setLookupLoading(false);
     setLookupMember(record);
     setLookupNote(`Assigning new membership for ${record.firstName} ${record.lastName}.`);
@@ -594,7 +573,7 @@ export default function MembersPanel({
     setModalDirty(false);
     clearDirty("members-modal");
     setModalOpen(true);
-  };
+  }, [clearDirty, form, loadPlans]);
 
   const openCancelMembershipModal = (record: Member) => {
     setCancelTarget(record);
@@ -695,7 +674,7 @@ export default function MembersPanel({
     setDetailMember(null);
   };
 
-  const openView = async (record: Member) => {
+  const openView = useCallback(async (record: Member) => {
     setDetailOpen(true);
     setDetailMember(null);
     try {
@@ -714,9 +693,9 @@ export default function MembersPanel({
       message.error(msg ?? "Could not load member.");
       setDetailOpen(false);
     }
-  };
+  }, [message]);
 
-  const handleDelete = async (record: Member) => {
+  const handleDelete = useCallback(async (record: Member) => {
     try {
       const { data } = await apiClient.delete<{ success: boolean; message?: string }>(`/gym/members/${record._id}`);
       if (data.success) {
@@ -732,9 +711,9 @@ export default function MembersPanel({
           : undefined;
       message.error(msg ?? "Delete failed.");
     }
-  };
+  }, [message, loadMembers]);
 
-  const getRowActionItems = (record: Member) => [
+  const getRowActionItems = useCallback((record: Member) => [
     {
       key: "view",
       label: "View Details",
@@ -779,19 +758,7 @@ export default function MembersPanel({
         });
       }
     }
-  ];
-
-  const beforeUploadAvatar = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = typeof reader.result === "string" ? reader.result : "";
-      setAvatarList([{ uid: String(Date.now()), name: file.name, status: "done", url: result }]);
-      setModalDirty(true);
-      setDirty("members-modal", true);
-    };
-    reader.readAsDataURL(file);
-    return false;
-  };
+  ], [canUpdateMember, canDeleteMember, modal, openView, openEdit, handleDelete]);
 
   const onSubmit = async () => {
     try {
@@ -843,8 +810,7 @@ export default function MembersPanel({
         return;
       }
 
-      const profilePicture =
-        avatarList[0]?.url && typeof avatarList[0].url === "string" ? avatarList[0].url : null;
+      const profilePicture = editing?.profile.profilePicture ?? null;
 
       if (editing) {
         const payload = {
@@ -1059,7 +1025,7 @@ export default function MembersPanel({
     }
   };
 
-  const columns: ColumnsType<Member> = [
+  const columns: ColumnsType<Member> = useMemo(() => [
       {
         title: "Member",
         key: "member",
@@ -1178,7 +1144,7 @@ export default function MembersPanel({
           </Space>
         )
       }
-    ];
+    ], [token, canCreateMember, openView, openNewMembership, getRowActionItems]);
 
   const visibleColumns = useMemo(
     () =>
@@ -1307,7 +1273,8 @@ export default function MembersPanel({
           },
           showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} members`
         }}
-        scroll={{ x: 1100 }}
+        scroll={{ x: 1100, y: "calc(100vh - 120px)" }}
+        tableLayout="fixed"
         locale={{ emptyText: "No Data Found" }}
       />
 
@@ -1321,6 +1288,7 @@ export default function MembersPanel({
         title="Cancel membership"
         open={Boolean(cancelTarget)}
         onCancel={closeCancelMembershipModal}
+        styles={{ body: { maxHeight: "70vh", overflowY: "auto" } }}
         footer={[
           <Button key="cancel" onClick={closeCancelMembershipModal} disabled={cancelSubmitting}>
             Cancel

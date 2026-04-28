@@ -34,6 +34,35 @@ type AuthState = {
   error: string | null;
 };
 
+const AUTH_COOKIE_NAME = "gym_access_token";
+
+function persistAuthCookie(token: string): void {
+  if (typeof document === "undefined" || !token) {
+    return;
+  }
+  const secureAttr = window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `${AUTH_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; SameSite=Lax${secureAttr}`;
+}
+
+function clearAuthCookie(): void {
+  if (typeof document === "undefined") {
+    return;
+  }
+  document.cookie = `${AUTH_COOKIE_NAME}=; Path=/; Max-Age=0; SameSite=Lax`;
+}
+
+function getSessionToken(data: UserData | null): string | null {
+  if (!data || typeof data !== "object" || !("token" in data)) {
+    return null;
+  }
+  const tokenValue = (data as { token?: unknown }).token;
+  return typeof tokenValue === "string" && tokenValue.trim() ? tokenValue : null;
+}
+
+function toStorageSession(session: UserData): UserData {
+  return session;
+}
+
 function isMockAuthEnabled(): boolean {
   return process.env.NEXT_PUBLIC_ENABLE_MOCK_AUTH === "true";
 }
@@ -60,28 +89,36 @@ function parseStoredSession(): UserData | null {
       localStorage.removeItem("userData");
       return null;
     }
+    const token = getSessionToken(parsed);
+    if (!token) {
+      // Drop stale pre-cookie sessions that cannot authorize API/middleware.
+      localStorage.removeItem("userData");
+      clearAuthCookie();
+      return null;
+    }
     return parsed;
   } catch {
+    localStorage.removeItem("userData");
+    clearAuthCookie();
     return null;
   }
 }
 
 const storedUserData = parseStoredSession();
+const storedToken = getSessionToken(storedUserData);
+if (storedToken) {
+  persistAuthCookie(storedToken);
+}
 
 const initialState: AuthState = {
-  isLoggedIn: Boolean(
-    storedUserData &&
-      typeof storedUserData === "object" &&
-      "token" in storedUserData &&
-      Boolean((storedUserData as { token?: string }).token)
-  ),
+  isLoggedIn: Boolean(storedToken),
   loading: false,
   userData: storedUserData,
   error: null
 };
 
 function isSessionPayload(data: UserData | null): data is SessionPayload {
-  return !!data && typeof data === "object" && "token" in data && "user" in data;
+  return !!data && typeof data === "object" && "user" in data;
 }
 
 export const loginAsync = createAsyncThunk<SessionPayload, LoginPayload>(
@@ -218,19 +255,17 @@ const authSlice = createSlice({
       state.error = null;
       if (typeof window !== "undefined") {
         localStorage.removeItem("userData");
+        clearAuthCookie();
       }
     },
     setSession(state, action: { payload: SessionPayload }) {
       state.isLoggedIn = true;
       state.userData = action.payload;
       if (typeof window !== "undefined") {
-        localStorage.setItem("userData", JSON.stringify(action.payload));
-      }
-    },
-    patchSessionToken(state, action: { payload: { token: string } }) {
-      if (state.userData && isSessionPayload(state.userData)) {
-        state.userData = { ...state.userData, token: action.payload.token };
-        localStorage.setItem("userData", JSON.stringify(state.userData));
+        localStorage.setItem("userData", JSON.stringify(toStorageSession(action.payload)));
+        if (action.payload.token) {
+          persistAuthCookie(action.payload.token);
+        }
       }
     },
     updateGymInSession(state, action: { payload: { name?: string; logoUrl?: string | null } }) {
@@ -242,7 +277,7 @@ const authSlice = createSlice({
             ...action.payload
           }
         };
-        localStorage.setItem("userData", JSON.stringify(state.userData));
+        localStorage.setItem("userData", JSON.stringify(toStorageSession(state.userData)));
       }
     },
     updateBranchInSession(state, action: { payload: { branchId: string; name: string } }) {
@@ -261,7 +296,7 @@ const authSlice = createSlice({
         gym: { ...state.userData.gym, branches },
         activeBranch
       };
-      localStorage.setItem("userData", JSON.stringify(state.userData));
+      localStorage.setItem("userData", JSON.stringify(toStorageSession(state.userData)));
     },
     setActiveBranch(state, action: { payload: { branch: SessionPayload["activeBranch"]; token?: string } }) {
       if (!state.userData || !isSessionPayload(state.userData)) {
@@ -279,10 +314,10 @@ const authSlice = createSlice({
               }
             }
           : state.userData.user,
-        token: action.payload.token ?? state.userData.token
+        token: state.userData.token
       };
       state.userData = next;
-      localStorage.setItem("userData", JSON.stringify(state.userData));
+      localStorage.setItem("userData", JSON.stringify(toStorageSession(state.userData)));
     },
     replaceGymBranches(state, action: { payload: SessionGymBranch[] }) {
       if (!state.userData || !isSessionPayload(state.userData) || !state.userData.gym) {
@@ -313,7 +348,7 @@ const authSlice = createSlice({
         activeBranch,
         user
       };
-      localStorage.setItem("userData", JSON.stringify(state.userData));
+      localStorage.setItem("userData", JSON.stringify(toStorageSession(state.userData)));
     }
   },
   extraReducers: (builder) => {
@@ -327,7 +362,10 @@ const authSlice = createSlice({
         state.isLoggedIn = true;
         state.userData = action.payload;
         if (typeof window !== "undefined") {
-          localStorage.setItem("userData", JSON.stringify(action.payload));
+          localStorage.setItem("userData", JSON.stringify(toStorageSession(action.payload)));
+          if (action.payload.token) {
+            persistAuthCookie(action.payload.token);
+          }
         }
       })
       .addCase(loginAsync.rejected, (state, action) => {
@@ -335,6 +373,9 @@ const authSlice = createSlice({
         state.isLoggedIn = false;
         state.userData = null;
         state.error = (action.payload as string) ?? "Login failed";
+        if (typeof window !== "undefined") {
+          clearAuthCookie();
+        }
       })
       .addCase(signupAsync.pending, (state) => {
         state.loading = true;
@@ -346,6 +387,7 @@ const authSlice = createSlice({
         state.userData = null;
         if (typeof window !== "undefined") {
           localStorage.removeItem("userData");
+          clearAuthCookie();
         }
       })
       .addCase(signupAsync.rejected, (state, action) => {
@@ -353,6 +395,9 @@ const authSlice = createSlice({
         state.isLoggedIn = false;
         state.userData = null;
         state.error = (action.payload as string) ?? "Signup failed";
+        if (typeof window !== "undefined") {
+          clearAuthCookie();
+        }
       })
       .addCase(logoutAsync.fulfilled, (state) => {
         state.isLoggedIn = false;
@@ -360,6 +405,7 @@ const authSlice = createSlice({
         state.error = null;
         if (typeof window !== "undefined") {
           localStorage.removeItem("userData");
+          clearAuthCookie();
         }
       });
   }
@@ -368,7 +414,6 @@ const authSlice = createSlice({
 export const {
   logout,
   setSession,
-  patchSessionToken,
   updateGymInSession,
   updateBranchInSession,
   setActiveBranch,

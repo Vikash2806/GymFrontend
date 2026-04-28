@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { App, Button, Card, Col, Row, Space, Statistic, Table, Tag, Typography, theme } from "antd";
-import { DollarCircleOutlined, FilterOutlined, TeamOutlined, TransactionOutlined, WalletOutlined } from "@ant-design/icons";
+import { DollarCircleOutlined, FilterOutlined, TransactionOutlined, WalletOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import apiClient from "@/utils/api";
@@ -52,6 +52,16 @@ type TransactionsResponse = {
   pageSize?: number;
   insights?: TransactionInsights;
   message?: string;
+};
+
+type MetricCard = {
+  key: string;
+  title: string;
+  value: number;
+  accent: string;
+  bg: string;
+  icon: React.ReactNode;
+  formatter?: (value: number) => string;
 };
 
 const EMPTY_INSIGHTS: TransactionInsights = {
@@ -282,15 +292,7 @@ export default function TransactionsPanel() {
     setFilterOpen(false);
   };
 
-  const metricCards = [
-    {
-      key: "membersPaid",
-      title: "Members Paid (range)",
-      value: insights.successfulMemberCount,
-      accent: token.colorSuccess,
-      bg: token.colorSuccessBg,
-      icon: <TeamOutlined />
-    },
+  const metricCards: MetricCard[] = [
     {
       key: "collected",
       title: "Collected Amount (range)",
@@ -310,14 +312,15 @@ export default function TransactionsPanel() {
       formatter: (value: number) => formatInr(value)
     },
     {
-      key: "totalTx",
-      title: "Total Transactions",
-      value: insights.totalTransactions,
+      key: "totalRevenue",
+      title: "Total Revenue",
+      value: insights.successfulAmount - insights.refundedAmount,
       accent: token.colorInfo,
       bg: token.colorInfoBg,
-      icon: <TransactionOutlined />
+      icon: <TransactionOutlined />,
+      formatter: (value: number) => formatInr(value)
     }
-  ] as const;
+  ];
 
   return (
     <Space direction="vertical" size={14} style={{ width: "100%" }}>
@@ -355,12 +358,14 @@ export default function TransactionsPanel() {
 
       <Row gutter={[12, 12]}>
         {metricCards.map((card) => (
-          <Col key={card.key} xs={24} sm={12} md={6}>
+          <Col key={card.key} xs={24} sm={12} md={8} style={{ display: "flex" }}>
             <Card
               size="small"
-              styles={{ body: { padding: 14 } }}
+              styles={{ body: { padding: 14, minHeight: 120 } }}
               style={{
-                borderTop: `3px solid ${card.accent}`
+                borderTop: `3px solid ${card.accent}`,
+                width: "100%",
+                height: "100%"
               }}
             >
               <Space align="start" style={{ width: "100%", justifyContent: "space-between" }}>
@@ -409,7 +414,8 @@ export default function TransactionsPanel() {
           },
           showTotal: (value, range) => `${range[0]}-${range[1]} of ${value} transactions`
         }}
-        scroll={{ x: 1180 }}
+        scroll={{ x: 1180, y: "calc(100vh - 120px)" }}
+        tableLayout="fixed"
         locale={{ emptyText: "No transactions found for selected filters." }}
       />
 

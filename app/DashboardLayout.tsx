@@ -21,6 +21,9 @@ const DashboardLayout: React.FC<Props> = ({ children }) => {
   const session = useAppSelector(selectSession);
 
   useEffect(() => {
+    if (process.env.NEXT_PUBLIC_ENABLE_DASHBOARD_WARMUP !== "true") {
+      return;
+    }
     if (!session) {
       return;
     }
@@ -57,19 +60,7 @@ const DashboardLayout: React.FC<Props> = ({ children }) => {
           }
         }),
       () => apiClient.get("/gym/expense-categories"),
-      () => apiClient.get("/gym/expenses", { params: { year, month } }),
-      () =>
-        warmupBranchId
-          ? apiClient.get("/gym/members", { params: { branchId: warmupBranchId } })
-          : Promise.resolve(null),
-      () =>
-        apiClient.get("/gym/finance/overview", {
-          params: {
-            year,
-            month,
-            branchId: warmupBranchId || undefined
-          }
-        })
+      () => apiClient.get("/gym/expenses", { params: { year, month, page: 1, pageSize: 10 } })
     ];
 
     const timer = window.setTimeout(() => {

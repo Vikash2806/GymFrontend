@@ -32,7 +32,7 @@ export type SessionGym = {
 };
 
 export type SessionPayload = {
-  token: string;
+  token?: string;
   user: SessionUser;
   gym: SessionGym | null;
   activeBranch: SessionGymBranch | null;
