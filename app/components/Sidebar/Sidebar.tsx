@@ -207,6 +207,21 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
     }
   }, [currentRoute, parentMap, pathname, routeMap]);
 
+  useEffect(() => {
+    const frequentRoutes = ["/pages/dashboard", "/pages/members", "/pages/transactions"];
+    const routesToPrefetch = new Set<string>([
+      ...Object.values(routeMap),
+      ...frequentRoutes,
+      getFirstAccessibleRoute(session)
+    ]);
+
+    routesToPrefetch.forEach((route) => {
+      if (route && route.startsWith("/")) {
+        void router.prefetch(route);
+      }
+    });
+  }, [routeMap, router, session]);
+
   const handleClick: MenuProps["onClick"] = (e) => {
     setSelectedKeys([e.key]);
     const targetRoute = routeMap[e.key];
