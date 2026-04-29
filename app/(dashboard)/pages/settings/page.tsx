@@ -201,6 +201,7 @@ export default function SettingsPage() {
               <Form.Item
                 label="Phone number"
                 name="mobileNumber"
+                getValueFromEvent={(event) => stripToIndianMobileDigits(event?.target?.value ?? "")}
                 rules={[
                   { required: true, message: "Mobile number is required." },
                   {
@@ -216,10 +217,6 @@ export default function SettingsPage() {
                   placeholder="Enter mobile number"
                   maxLength={10}
                   disabled={!canEditProfile}
-                  onChange={(event) => {
-                    const value = stripToIndianMobileDigits(event.target.value);
-                    profileForm.setFieldValue("mobileNumber", value);
-                  }}
                 />
               </Form.Item>
               <Form.Item

@@ -20,7 +20,7 @@ type TransactionRow = {
   branchId: string;
   amount: number;
   method: "cash" | "upi" | "card";
-  status: "success" | "pending" | "failed" | "refunded";
+  status: "success" | "refunded";
   transactionRef: string | null;
   paidAt: string;
   createdAt: string;
@@ -36,10 +36,6 @@ type TransactionInsights = {
   successfulCount: number;
   successfulAmount: number;
   successfulMemberCount: number;
-  failedCount: number;
-  failedAmount: number;
-  pendingCount: number;
-  pendingAmount: number;
   refundedCount: number;
   refundedAmount: number;
 };
@@ -70,10 +66,6 @@ const EMPTY_INSIGHTS: TransactionInsights = {
   successfulCount: 0,
   successfulAmount: 0,
   successfulMemberCount: 0,
-  failedCount: 0,
-  failedAmount: 0,
-  pendingCount: 0,
-  pendingAmount: 0,
   refundedCount: 0,
   refundedAmount: 0
 };
@@ -86,12 +78,6 @@ function formatDateTime(iso: string): string {
 function renderStatusTag(status: TransactionRow["status"]) {
   if (status === "success") {
     return <Tag color="success">SUCCESS</Tag>;
-  }
-  if (status === "pending") {
-    return <Tag color="warning">PENDING</Tag>;
-  }
-  if (status === "failed") {
-    return <Tag color="error">FAILED</Tag>;
   }
   if (status === "refunded") {
     return <Tag color="processing">REFUNDED</Tag>;
@@ -135,6 +121,24 @@ export default function TransactionsPanel() {
     () => (session?.gym?.branches ?? []).map((b) => ({ value: b.id, label: `${b.code} — ${b.name}` })),
     [session?.gym?.branches]
   );
+  const validBranchIds = useMemo(() => new Set(branchOptions.map((option) => option.value)), [branchOptions]);
+
+  const normalizeBranchId = useCallback(
+    (rawBranchId: string) => {
+      const candidate = String(rawBranchId ?? "").trim();
+      if (validBranchIds.size === 0) {
+        return candidate || defaultBranchId || "";
+      }
+      if (candidate && validBranchIds.has(candidate)) {
+        return candidate;
+      }
+      if (defaultBranchId && validBranchIds.has(defaultBranchId)) {
+        return defaultBranchId;
+      }
+      return "";
+    },
+    [validBranchIds, defaultBranchId]
+  );
 
   const countActiveFilters = useCallback((value: TransactionFilters) => {
     let count = 0;
@@ -166,6 +170,7 @@ export default function TransactionsPanel() {
       const restored: TransactionFilters = {
         ...initialFilters,
         ...saved,
+        branchId: normalizeBranchId(String(saved.branchId ?? initialFilters.branchId ?? "")),
         dateRange:
           saved.fromDate && saved.toDate ? [dayjs(saved.fromDate), dayjs(saved.toDate)] : null
       };
@@ -175,7 +180,14 @@ export default function TransactionsPanel() {
       setFilters(initialFilters);
       setActiveFilters(countActiveFilters(initialFilters));
     }
-  }, [initialFilters, countActiveFilters]);
+  }, [initialFilters, countActiveFilters, normalizeBranchId]);
+
+  useEffect(() => {
+    if (!filters.branchId || validBranchIds.size === 0 || validBranchIds.has(filters.branchId)) {
+      return;
+    }
+    setFilters((prev) => ({ ...prev, branchId: normalizeBranchId(prev.branchId) }));
+  }, [filters.branchId, validBranchIds, normalizeBranchId]);
 
   useEffect(() => {
     setPage(1);
@@ -321,6 +333,15 @@ export default function TransactionsPanel() {
       formatter: (value: number) => formatInr(value)
     }
   ];
+  const visibleMetricCards = useMemo(() => {
+    if (filters.status === "success") {
+      return metricCards.filter((card) => card.key === "collected");
+    }
+    if (filters.status === "refunded") {
+      return metricCards.filter((card) => card.key === "refunded");
+    }
+    return metricCards;
+  }, [filters.status, metricCards]);
 
   return (
     <Space direction="vertical" size={14} style={{ width: "100%" }}>
@@ -357,7 +378,7 @@ export default function TransactionsPanel() {
       </div>
 
       <Row gutter={[12, 12]}>
-        {metricCards.map((card) => (
+        {visibleMetricCards.map((card) => (
           <Col key={card.key} xs={24} sm={12} md={8} style={{ display: "flex" }}>
             <Card
               size="small"

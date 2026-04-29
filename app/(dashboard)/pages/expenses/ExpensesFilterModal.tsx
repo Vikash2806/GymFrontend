@@ -6,12 +6,13 @@ import type { Dayjs } from "dayjs";
 import type { ExpenseCategory } from "@/types/expense";
 
 const { RangePicker } = DatePicker;
+const GENERAL_EMPLOYEE_OPTION_VALUE = "general";
 
 export type ExpenseFilters = {
   search: string;
   categoryId: string;
   employeeUserId: string;
-  expenseKind: "all" | "employee_related" | "general";
+  status: "all" | "success" | "deleted";
   dateRange: [Dayjs, Dayjs];
   minAmount: number | null;
   maxAmount: number | null;
@@ -51,6 +52,10 @@ export default function ExpensesFilterModal({
     [categories, draft.categoryId]
   );
   const employeeEnabled = selectedCategory?.showEmployeeDetails === true && selectedCategory?.listBranchUsers === true;
+  const employeeOptionsWithGeneral = useMemo(
+    () => [{ value: GENERAL_EMPLOYEE_OPTION_VALUE, label: "General" }, ...employeeOptions],
+    [employeeOptions]
+  );
 
   useEffect(() => {
     if (!employeeEnabled && draft.employeeUserId) {
@@ -100,25 +105,29 @@ export default function ExpensesFilterModal({
 
           <Col xs={24} md={12}>
             <Select
-              value={draft.expenseKind}
-              options={[
-                { value: "all", label: "All expense types" },
-                { value: "employee_related", label: "Employee related" },
-                { value: "general", label: "General" }
-              ]}
-              onChange={(value) => setDraft((prev) => ({ ...prev, expenseKind: value }))}
-              style={{ width: "100%" }}
-            />
-          </Col>
-          <Col xs={24} md={12}>
-            <Select
               allowClear
               value={draft.employeeUserId || undefined}
               placeholder={employeeEnabled ? "Filter by employee" : "Employee filter enabled for selected employee categories"}
-              options={employeeOptions}
+              options={employeeOptionsWithGeneral}
               loading={employeesLoading}
               disabled={!employeeEnabled}
               onChange={(value) => setDraft((prev) => ({ ...prev, employeeUserId: value ?? "" }))}
+              style={{ width: "100%" }}
+            />
+          </Col>
+
+          <Col xs={24} md={12}>
+            <Select
+              value={draft.status}
+              placeholder="Filter by status"
+              options={[
+                { value: "all", label: "All status" },
+                { value: "success", label: "Success" },
+                { value: "deleted", label: "Deleted" }
+              ]}
+              onChange={(value) =>
+                setDraft((prev) => ({ ...prev, status: (value ?? "all") as ExpenseFilters["status"] }))
+              }
               style={{ width: "100%" }}
             />
           </Col>

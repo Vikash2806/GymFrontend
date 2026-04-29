@@ -9,7 +9,7 @@ const { RangePicker } = DatePicker;
 export type TransactionFilters = {
   search: string;
   branchId: string;
-  status: "all" | "success" | "pending" | "failed" | "refunded";
+  status: "all" | "success"  | "refunded";
   method: "all" | "cash" | "upi" | "card";
   dateRange: [Dayjs | null, Dayjs | null] | null;
   minAmount: number | null;
@@ -92,8 +92,6 @@ export default function TransactionsFilterModal({
               options={[
                 { value: "all", label: "All status" },
                 { value: "success", label: "Success" },
-                { value: "pending", label: "Pending" },
-                { value: "failed", label: "Failed" },
                 { value: "refunded", label: "Refunded" }
               ]}
               style={{ width: "100%" }}

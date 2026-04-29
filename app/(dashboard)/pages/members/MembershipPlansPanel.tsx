@@ -13,7 +13,7 @@ import {
   Switch,
   Table,
   Tooltip,
-  Typography,
+  Typography,       
   theme
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
@@ -45,11 +45,13 @@ type PlanResponse = { success: boolean; plan?: MembershipPlan; message?: string 
 export type MembershipPlansPanelProps = {
   createRequestId?: number;
   onPlanCreatedFromExternalRequest?: (plan: { _id: string; name: string }) => void;
+  onCreateRequestHandled?: () => void;
 };
 
 export default function MembershipPlansPanel({
   createRequestId = 0,
-  onPlanCreatedFromExternalRequest
+  onPlanCreatedFromExternalRequest,
+  onCreateRequestHandled
 }: MembershipPlansPanelProps) {
   const { message } = App.useApp();
   const { token } = theme.useToken();
@@ -61,6 +63,7 @@ export default function MembershipPlansPanel({
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<MembershipPlan | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [modalDirty, setModalDirty] = useState(false);
   const [pendingExternalCreate, setPendingExternalCreate] = useState(false);
   const [form] = Form.useForm<MembershipPlanInput>();
   const { setDirty, clearDirty, confirmNavigation } = useUnsavedChanges();
@@ -105,6 +108,7 @@ export default function MembershipPlansPanel({
     }
     setPendingExternalCreate(true);
     openCreate();
+    onCreateRequestHandled?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [createRequestId]);
 
@@ -125,6 +129,7 @@ export default function MembershipPlansPanel({
       isActive: true
     });
     setModalOpen(true);
+    setModalDirty(false);
     clearDirty("membership-plan-modal");
   };
 
@@ -140,21 +145,24 @@ export default function MembershipPlansPanel({
       isActive: record.isActive
     });
     setModalOpen(true);
+    setModalDirty(false);
     clearDirty("membership-plan-modal");
   }, [branchId, form, clearDirty]);
 
   const closeModal = () => {
-    const close = () => {
-      setModalOpen(false);
-      setEditing(null);
-      form.resetFields();
-      clearDirty("membership-plan-modal");
-    };
-    if (form.isFieldsTouched(true)) {
-      confirmNavigation(close);
+    setModalOpen(false);
+    setEditing(null);
+    form.resetFields();
+    setModalDirty(false);
+    clearDirty("membership-plan-modal");
+  };
+
+  const requestCloseModal = () => {
+    if (modalDirty) {
+      confirmNavigation(closeModal);
       return;
     }
-    close();
+    closeModal();
   };
 
   const onSubmit = async () => {
@@ -355,10 +363,10 @@ export default function MembershipPlansPanel({
       <Modal
         title={editing ? "Edit Membership" : "Create New Membership"}
         open={modalOpen}
-        onCancel={closeModal}
+        onCancel={requestCloseModal}
         width={WIDE_MODAL_WIDTH}
         footer={[
-          <Button key="cancel" onClick={closeModal}>
+          <Button key="cancel" onClick={requestCloseModal}>
             Cancel
           </Button>,
           <Button key="submit" type="primary" loading={submitting} onClick={() => void onSubmit()}>
@@ -373,6 +381,7 @@ export default function MembershipPlansPanel({
           requiredMark
           style={{ marginTop: 8 }}
           onValuesChange={() => {
+            setModalDirty(true);
             setDirty("membership-plan-modal", true);
           }}
         >

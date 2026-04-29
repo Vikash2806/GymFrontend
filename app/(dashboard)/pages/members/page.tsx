@@ -25,6 +25,28 @@ const MembershipPlansPanel = dynamic<MembershipPlansPanelProps>(() => import("./
 });
 import RbacPermissionGuard from "@/app/components/Auth/RbacPermissionGuard";
 import { FEATURES } from "@/utils/permissions";
+import type { Dayjs } from "dayjs";
+
+type MemberDraftFromMemberships = {
+  branchId?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  phone?: string;
+  gender?: string;
+  dob?: Dayjs | null;
+  dateOfJoining?: Dayjs;
+  street?: string;
+  city?: string;
+  state?: string;
+  zipcode?: string;
+  country?: string;
+  planId?: string;
+  paidAmount?: number;
+  paymentMethod?: "cash" | "upi" | "card";
+  emergencyContacts?: Array<{ name: string; phone: string; relation: string }>;
+  notes?: string;
+};
 
 function MembersPageContent() {
   const [memberCount, setMemberCount] = useState(0);
@@ -33,6 +55,7 @@ function MembersPageContent() {
     _id: string;
     name: string;
   } | null>(null);
+  const [memberDraftFromMemberships, setMemberDraftFromMemberships] = useState<MemberDraftFromMemberships | null>(null);
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -59,7 +82,8 @@ function MembersPageContent() {
     }
   };
 
-  const requestMembershipCreateFromMembers = () => {
+  const requestMembershipCreateFromMembers = (draft?: MemberDraftFromMemberships) => {
+    setMemberDraftFromMemberships(draft ?? null);
     setMembershipCreateRequestId((prev) => prev + 1);
     switchTab("memberships");
   };
@@ -89,6 +113,8 @@ function MembersPageContent() {
                 onMemberCountChange={setMemberCount}
                 onRequestCreateMembershipPlan={requestMembershipCreateFromMembers}
                 createdPlanFromMemberships={recentlyCreatedPlan}
+                memberDraftFromMemberships={memberDraftFromMemberships}
+                onMemberDraftHandled={() => setMemberDraftFromMemberships(null)}
                 onCreatedPlanHandled={() => setRecentlyCreatedPlan(null)}
               />
             ) : null
@@ -104,6 +130,7 @@ function MembersPageContent() {
               <MembershipPlansPanel
                 createRequestId={membershipCreateRequestId}
                 onPlanCreatedFromExternalRequest={handlePlanCreatedFromMemberships}
+                onCreateRequestHandled={() => setMembershipCreateRequestId(0)}
               />
             ) : null
           }

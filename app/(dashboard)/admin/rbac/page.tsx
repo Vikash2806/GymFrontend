@@ -15,6 +15,7 @@ import {
   toggleRoleFeature
 } from "@/redux/features/rbacSlice";
 import { gymMembershipRoleFromSession } from "@/utils/gymRole";
+import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
 
 type PermissionsResponse = {
   success: boolean;
@@ -40,9 +41,11 @@ export default function RbacAdminPage() {
   const [activeRole, setActiveRole] = useState<"manager" | "staff">("staff");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [pageDirty, setPageDirty] = useState(false);
   const ownerDefaultTabAppliedRef = useRef(false);
   const currentUserRole = gymMembershipRoleFromSession(session);
   const canEditManagerRole = currentUserRole === "owner";
+  const { setDirty, clearDirty, confirmNavigation } = useUnsavedChanges();
 
   useEffect(() => {
     messageRef.current = message;
@@ -63,12 +66,14 @@ export default function RbacAdminPage() {
           staff: (data.staff ?? []) as FeatureKey[]
         })
       );
+      setPageDirty(false);
+      clearDirty("rbac-page");
     } catch {
       messageRef.current.error("Could not load permissions.");
     } finally {
       setLoading(false);
     }
-  }, [dispatch]);
+  }, [dispatch, clearDirty]);
 
   const roleFeatures = config[activeRole];
   const sections = useMemo(
@@ -109,6 +114,8 @@ export default function RbacAdminPage() {
   const setAll = (checked: boolean) => {
     const next = checked ? [...new Set([...roleFeatures, ...editableFeatures])] : roleFeatures.filter((feature) => isLocked(feature));
     dispatch(setRoleFeatures({ role: activeRole, features: next }));
+    setPageDirty(true);
+    setDirty("rbac-page", true);
   };
 
   const save = async () => {
@@ -131,12 +138,25 @@ export default function RbacAdminPage() {
           staff: (data.staff ?? payload.staff) as FeatureKey[]
         })
       );
+      setPageDirty(false);
+      clearDirty("rbac-page");
       message.success("Permissions saved.");
     } catch {
       message.error("Could not save permissions.");
     } finally {
       setSaving(false);
     }
+  };
+
+  const requestRoleChange = (nextRole: "manager" | "staff") => {
+    if (nextRole === activeRole) {
+      return;
+    }
+    if (!pageDirty) {
+      setActiveRole(nextRole);
+      return;
+    }
+    confirmNavigation(() => setActiveRole(nextRole));
   };
 
   const renderSection = (section: keyof typeof FEATURE_MAP, features: FeatureKey[]) => (
@@ -156,15 +176,17 @@ export default function RbacAdminPage() {
                 <Checkbox
                   checked={checked}
                   disabled={disabled || loading || saving}
-                  onChange={(event) =>
+                  onChange={(event) => {
                     dispatch(
                       toggleRoleFeature({
                         role: activeRole,
                         feature,
                         checked: event.target.checked
                       })
-                    )
-                  }
+                    );
+                    setPageDirty(true);
+                    setDirty("rbac-page", true);
+                  }}
                 >
                   {toTitle(feature)}
                 </Checkbox>
@@ -194,12 +216,18 @@ export default function RbacAdminPage() {
     }
   }, [activeRole, canEditManagerRole, currentUserRole]);
 
+  useEffect(() => {
+    return () => {
+      clearDirty("rbac-page");
+    };
+  }, [clearDirty]);
+
   return (
     <RbacPermissionGuard permission={FEATURES.RBAC_SETTINGS}>
       <Space direction="vertical" size={16} style={{ width: "100%" }}>
         <Tabs
           activeKey={activeRole}
-          onChange={(value) => setActiveRole(value as "manager" | "staff")}
+          onChange={(value) => requestRoleChange(value as "manager" | "staff")}
           items={
             canEditManagerRole
               ? [
@@ -239,15 +267,17 @@ export default function RbacAdminPage() {
                 <Checkbox
                   checked={config.manager.includes(FEATURES.RBAC_SETTINGS as FeatureKey)}
                   disabled={loading || saving}
-                  onChange={(event) =>
+                  onChange={(event) => {
                     dispatch(
                       toggleRoleFeature({
                         role: "manager",
                         feature: FEATURES.RBAC_SETTINGS as FeatureKey,
                         checked: event.target.checked
                       })
-                    )
-                  }
+                    );
+                    setPageDirty(true);
+                    setDirty("rbac-page", true);
+                  }}
                 >
                   Allow manager to access Role Master page
                 </Checkbox>

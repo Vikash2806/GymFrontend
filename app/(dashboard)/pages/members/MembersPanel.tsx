@@ -214,22 +214,41 @@ type FormShape = {
   notes?: string;
 };
 
+function cloneMemberDraft(draft?: Partial<FormShape> | null): Partial<FormShape> {
+  if (!draft) {
+    return {};
+  }
+  return {
+    ...draft,
+    dob: draft.dob ? dayjs(draft.dob) : draft.dob ?? undefined,
+    dateOfJoining: draft.dateOfJoining ? dayjs(draft.dateOfJoining) : undefined,
+    emergencyContacts: Array.isArray(draft.emergencyContacts)
+      ? draft.emergencyContacts.map((contact) => ({
+          name: contact?.name ?? "",
+          phone: contact?.phone ?? "",
+          relation: contact?.relation ?? ""
+        }))
+      : undefined
+  };
+}
+
 export type MembersPanelProps = {
   onMemberCountChange?: (count: number) => void;
-  onRequestCreateMembershipPlan?: () => void;
+  onRequestCreateMembershipPlan?: (draft?: Partial<FormShape>) => void;
   createdPlanFromMemberships?: { _id: string; name: string } | null;
+  memberDraftFromMemberships?: Partial<FormShape> | null;
+  onMemberDraftHandled?: () => void;
   onCreatedPlanHandled?: () => void;
 };
 
 export default function MembersPanel({
   onMemberCountChange,
   onRequestCreateMembershipPlan,
-  createdPlanFromMemberships: _createdPlanFromMemberships,
-  onCreatedPlanHandled: _onCreatedPlanHandled
+  createdPlanFromMemberships,
+  memberDraftFromMemberships,
+  onMemberDraftHandled,
+  onCreatedPlanHandled
 }: MembersPanelProps) {
-  void _createdPlanFromMemberships;
-  void _onCreatedPlanHandled;
-
   const { message, modal } = App.useApp();
   const { token } = theme.useToken();
   const session = useAppSelector(selectSession);
@@ -263,6 +282,7 @@ export default function MembersPanel({
   const [lookupMember, setLookupMember] = useState<Member | null>(null);
   const [lookupNote, setLookupNote] = useState<string>("");
   const [newMembershipTarget, setNewMembershipTarget] = useState<Member | null>(null);
+  const [pendingCreatedPlan, setPendingCreatedPlan] = useState<{ _id: string; name: string } | null>(null);
   const [cancelTarget, setCancelTarget] = useState<Member | null>(null);
   const [cancelRefundAmount, setCancelRefundAmount] = useState<number | null>(null);
   const [cancelSubmitting, setCancelSubmitting] = useState(false);
@@ -461,7 +481,7 @@ export default function MembersPanel({
     void loadPlans(targetBranchId);
   }, [editing, form, effectiveBranchId, defaultBranchId, loadPlans]);
 
-  const openCreate = () => {
+  const openCreate = useCallback((draft?: Partial<FormShape>) => {
     setEditing(null);
     setNewMembershipTarget(null);
     setLookupMember(null);
@@ -478,14 +498,19 @@ export default function MembersPanel({
       paymentMethod: "cash" as const,
       emergencyContacts: []
     });
+    if (draft) {
+      form.setFieldsValue(cloneMemberDraft(draft));
+    }
     setModalDirty(false);
     clearDirty("members-modal");
     setModalOpen(true);
-  };
+  }, [clearDirty, defaultBranchId, effectiveBranchId, form]);
 
   const startCreateMembershipFromMemberModal = () => {
+    const rawDraft = form.getFieldsValue(true) as Partial<FormShape>;
+    const draft = cloneMemberDraft(rawDraft);
     setModalOpen(false);
-    onRequestCreateMembershipPlan?.();
+    onRequestCreateMembershipPlan?.(draft);
   };
 
   const openEdit = useCallback(async (record: Member) => {
@@ -534,6 +559,43 @@ export default function MembersPanel({
       setSubmitting(false);
     }
   }, [message, form, canManageBranches, effectiveBranchId, cityOptions, stateOptions, countryOptions, clearDirty]);
+
+  useEffect(() => {
+    if (!memberDraftFromMemberships || createdPlanFromMemberships) {
+      return;
+    }
+    openCreate(memberDraftFromMemberships);
+    onMemberDraftHandled?.();
+  }, [memberDraftFromMemberships, createdPlanFromMemberships, onMemberDraftHandled, openCreate]);
+
+  useEffect(() => {
+    if (!createdPlanFromMemberships) {
+      return;
+    }
+    setPendingCreatedPlan(createdPlanFromMemberships);
+    const branchFromDraft = String(memberDraftFromMemberships?.branchId ?? effectiveBranchId ?? defaultBranchId ?? "");
+    openCreate(memberDraftFromMemberships ?? undefined);
+    if (branchFromDraft) {
+      void loadPlans(branchFromDraft);
+    }
+  }, [createdPlanFromMemberships, memberDraftFromMemberships, effectiveBranchId, defaultBranchId, openCreate, loadPlans]);
+
+  useEffect(() => {
+    if (!pendingCreatedPlan) {
+      return;
+    }
+    const matchedPlan = plans.find((plan) => plan._id === pendingCreatedPlan._id);
+    if (!matchedPlan) {
+      return;
+    }
+    form.setFieldsValue({
+      planId: matchedPlan._id,
+      paidAmount: Number(matchedPlan.price ?? 0)
+    });
+    setPendingCreatedPlan(null);
+    onCreatedPlanHandled?.();
+    onMemberDraftHandled?.();
+  }, [pendingCreatedPlan, plans, form, onCreatedPlanHandled, onMemberDraftHandled]);
 
   const closeModal = useCallback(() => {
     setModalOpen(false);
@@ -1246,7 +1308,7 @@ export default function MembersPanel({
             defaultFilename="members.csv"
             disabled={!effectiveBranchId}
           />
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} disabled={!canCreateMember}>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => openCreate()} disabled={!canCreateMember}>
             Add member
           </Button>
         </Space>
@@ -1641,7 +1703,7 @@ export default function MembersPanel({
                         }}
                         notFoundContent={
                           planOptions.length ? undefined : (
-                            <Button type="link" onClick={startCreateMembershipFromMemberModal} style={{ padding: 0 }}>
+                            <Button type="link" onClick={() => startCreateMembershipFromMemberModal()} style={{ padding: 0 }}>
                               Add membership plan
                             </Button>
                           )

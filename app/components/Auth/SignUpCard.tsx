@@ -44,6 +44,7 @@ type AccountStepValues = {
   mobileNumber: string;
   recoveryEmail?: string;
   password: string;
+  confirmPassword: string;
 };
 
 type GymStepValues = {
@@ -254,6 +255,31 @@ export default function SignUpCard() {
             <Input.Password
               size="large"
               placeholder="Create a password"
+              prefix={<LockOutlined className={styles.inputIcon} />}
+              autoComplete="new-password"
+            />
+          </Form.Item>
+
+          <Form.Item
+            label="Confirm password"
+            name="confirmPassword"
+            dependencies={["password"]}
+            rules={[
+              { required: true, message: "Confirm your password." },
+              ({ getFieldValue }) => ({
+                validator: async (_, value) => {
+                  const password = getFieldValue("password");
+                  if (!value || value === password) {
+                    return;
+                  }
+                  throw new Error("Password should be match.");
+                }
+              })
+            ]}
+          >
+            <Input.Password
+              size="large"
+              placeholder="Confirm password"
               prefix={<LockOutlined className={styles.inputIcon} />}
               autoComplete="new-password"
             />

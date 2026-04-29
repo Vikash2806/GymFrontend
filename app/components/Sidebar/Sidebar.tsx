@@ -59,7 +59,7 @@ const mainMenuItems: MenuItem[] = [
     route: "/pages/staff-manager"
   },
   { key: "RbacAdmin", label: "Role Master", icon: <SettingOutlined />, route: "/admin/rbac" },
-
+  
   { key: "Settings", label: "Settings", icon: <SettingOutlined />, route: "/pages/settings" }
 ];
 
@@ -78,12 +78,6 @@ const settingsMenuItems: MenuItem[] = [
     icon: <SettingOutlined />,
     children: [{ key: "settings-gym", label: "Gym Settings", route: "/pages/settings?tab=gym" }]
   },
-  {
-    key: "settings-rbac",
-    label: "Roles & Permissions",
-    icon: <AppstoreOutlined />,
-    route: "/admin/rbac"
-  }
 ];
 
 const flattenRoutes = (items: MenuItem[], map: Record<string, string>) => {
@@ -194,12 +188,15 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
   }, [isSettingsRoute, mainMenuItemsFiltered, settingsMenuItemsFiltered]);
 
   useEffect(() => {
-    const matched = Object.entries(routeMap).find(([, route]) => {
-      if (route === currentRoute || route === pathname) {
-        return true;
-      }
-      return route.startsWith("/pages/settings?") && pathname === "/pages/settings";
-    });
+    const routeEntries = Object.entries(routeMap);
+    const matchedByCurrentRoute = routeEntries.find(([, route]) => route === currentRoute);
+    const matchedByPathname = routeEntries.find(([, route]) => route === pathname);
+    const matchedSettingsFallback =
+      pathname === "/pages/settings"
+        ? routeEntries.find(([, route]) => route === "/pages/settings?tab=profile")
+        : undefined;
+    const matched = matchedByCurrentRoute ?? matchedByPathname ?? matchedSettingsFallback;
+
     if (matched) {
       setSelectedKeys([matched[0]]);
       const nextParent = parentMap[matched[0]];

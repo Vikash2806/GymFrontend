@@ -14,6 +14,7 @@ import {
   InputNumber,
   Select,
   Space,
+  Tag,
   Table,
   Tabs,
   Typography,
@@ -44,9 +45,18 @@ import ExpensesFilterModal, { type ExpenseFilters } from "./ExpensesFilterModal"
 
 const { Title, Text } = Typography;
 const FILTER_STORAGE_KEY = "expenseFilters";
-const GENERAL_EMPLOYEE_OPTION_VALUE = "__general__";
+const GENERAL_EMPLOYEE_OPTION_VALUE = "general";
 
-type ExpenseTableColumnKey = "date" | "amount" | "expenseType" | "branch" | "employee" | "category" | "notes" | "actions";
+type ExpenseTableColumnKey =
+  | "date"
+  | "amount"
+  | "status"
+  | "expenseType"
+  | "branch"
+  | "employee"
+  | "category"
+  | "notes"
+  | "actions";
 
 type ExpenseFormValues = {
   employeeUserId?: string;
@@ -74,7 +84,7 @@ export default function ExpensesPanel() {
       search: "",
       categoryId: "",
       employeeUserId: "",
-      expenseKind: "all",
+      status: "all",
       dateRange: [dayjs().startOf("month"), dayjs().endOf("month")],
       minAmount: null,
       maxAmount: null
@@ -94,6 +104,7 @@ export default function ExpensesPanel() {
   const [visibleExpenseColumnKeys, setVisibleExpenseColumnKeys] = useState<ExpenseTableColumnKey[]>([
     "date",
     "amount",
+    "status",
     "expenseType",
     "branch",
     "employee",
@@ -105,16 +116,16 @@ export default function ExpensesPanel() {
   const [categoriesLoading, setCategoriesLoading] = useState(false);
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
   const [employeesLoading, setEmployeesLoading] = useState(false);
+  const [employeesLoadedOnce, setEmployeesLoadedOnce] = useState(false);
   const [staffUsers, setStaffUsers] = useState<ExpenseEmployeeOption[]>([]);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryRows, setSummaryRows] = useState<ExpenseCategorySummaryRow[]>([]);
   const [summaryTotal, setSummaryTotal] = useState(0);
-  const [summaryPage, setSummaryPage] = useState(1);
-  const [summaryPageSize, setSummaryPageSize] = useState(10);
 
   const [expenseDrawerOpen, setExpenseDrawerOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<ExpenseRow | null>(null);
   const [expenseSubmitting, setExpenseSubmitting] = useState(false);
+  const [expenseDrawerDirty, setExpenseDrawerDirty] = useState(false);
   const [returnToExpenseDrawer, setReturnToExpenseDrawer] = useState(false);
   const [newlyCreatedCategoryId, setNewlyCreatedCategoryId] = useState<string | null>(null);
   const [expenseForm] = Form.useForm<ExpenseFormValues>();
@@ -122,6 +133,7 @@ export default function ExpensesPanel() {
   const [categoryDrawerOpen, setCategoryDrawerOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<ExpenseCategory | null>(null);
   const [categorySubmitting, setCategorySubmitting] = useState(false);
+  const [categoryDrawerDirty, setCategoryDrawerDirty] = useState(false);
   const [categoryForm] = Form.useForm<CategoryFormValues>();
   const { setDirty, clearDirty, confirmNavigation } = useUnsavedChanges();
 
@@ -184,14 +196,14 @@ export default function ExpensesPanel() {
       if (filters.employeeUserId) {
         params.employeeUserId = filters.employeeUserId;
       }
-      if (filters.expenseKind !== "all") {
-        params.expenseKind = filters.expenseKind;
-      }
       if (filters.minAmount !== null) {
         params.minAmount = filters.minAmount;
       }
       if (filters.maxAmount !== null) {
         params.maxAmount = filters.maxAmount;
+      }
+      if (filters.status !== "all") {
+        params.status = filters.status;
       }
       return params;
     },
@@ -234,8 +246,13 @@ export default function ExpensesPanel() {
     } catch {
       setStaffUsers([]);
     } finally {
+      setEmployeesLoadedOnce(true);
       setEmployeesLoading(false);
     }
+  }, [defaultBranchId]);
+
+  useEffect(() => {
+    setEmployeesLoadedOnce(false);
   }, [defaultBranchId]);
 
   const loadExpenses = useCallback(async () => {
@@ -258,6 +275,11 @@ export default function ExpensesPanel() {
   }, [buildExpenseQueryParams]);
 
   const loadCategorySummary = useCallback(async () => {
+    if (filters.status === "deleted") {
+      setSummaryRows([]);
+      setSummaryTotal(0);
+      return;
+    }
     setSummaryLoading(true);
     try {
       const { data } = await apiClient.get<ExpenseCategorySummaryResponse>("/gym/expenses/category-summary", {
@@ -284,7 +306,7 @@ export default function ExpensesPanel() {
     } finally {
       setSummaryLoading(false);
     }
-  }, [buildExpenseQueryParams, message]);
+  }, [buildExpenseQueryParams, filters.status, message]);
 
   useEffect(() => {
     const raw = globalThis.localStorage.getItem(FILTER_STORAGE_KEY);
@@ -319,10 +341,10 @@ export default function ExpensesPanel() {
   }, [loadEmployees]);
 
   useEffect(() => {
-    if (expenseDrawerOpen && useBranchUserSelection && staffUsers.length === 0 && !employeesLoading) {
+    if (expenseDrawerOpen && useBranchUserSelection && !employeesLoadedOnce && !employeesLoading) {
       void loadEmployees();
     }
-  }, [expenseDrawerOpen, useBranchUserSelection, staffUsers.length, employeesLoading, loadEmployees]);
+  }, [expenseDrawerOpen, useBranchUserSelection, employeesLoadedOnce, employeesLoading, loadEmployees]);
 
   useEffect(() => {
     if (!filtersHydrated) {
@@ -335,18 +357,25 @@ export default function ExpensesPanel() {
     if (!filtersHydrated) {
       return;
     }
+    if (filters.status === "deleted") {
+      setSummaryRows([]);
+      setSummaryTotal(0);
+      return;
+    }
     void loadCategorySummary();
-  }, [loadCategorySummary, filtersHydrated]);
+  }, [loadCategorySummary, filtersHydrated, filters.status]);
 
   const openAddExpense = () => {
     setEditingExpense(null);
     setExpenseDrawerOpen(true);
+    setExpenseDrawerDirty(false);
     clearDirty("expenses-expense-drawer");
   };
 
   const openEditExpense = useCallback((row: ExpenseRow) => {
     setEditingExpense(row);
     setExpenseDrawerOpen(true);
+    setExpenseDrawerDirty(false);
     clearDirty("expenses-expense-drawer");
   }, [clearDirty]);
 
@@ -430,6 +459,7 @@ export default function ExpensesPanel() {
         if (data.success) {
           message.success("Expense updated.");
           setExpenseDrawerOpen(false);
+          setExpenseDrawerDirty(false);
           clearDirty("expenses-expense-drawer");
           void loadExpenses();
           void loadCategorySummary();
@@ -441,6 +471,7 @@ export default function ExpensesPanel() {
         if (data.success) {
           message.success("Expense added.");
           setExpenseDrawerOpen(false);
+          setExpenseDrawerDirty(false);
           clearDirty("expenses-expense-drawer");
           void loadExpenses();
           void loadCategorySummary();
@@ -489,19 +520,25 @@ export default function ExpensesPanel() {
   const openAddCategory = () => {
     setEditingCategory(null);
     setCategoryDrawerOpen(true);
+    setCategoryDrawerDirty(false);
     clearDirty("expenses-category-drawer");
   };
 
   const openAddCategoryFromExpenseDrawer = () => {
     setReturnToExpenseDrawer(true);
     setExpenseDrawerOpen(false);
+    setExpenseDrawerDirty(false);
+    clearDirty("expenses-expense-drawer");
     setEditingCategory(null);
     setCategoryDrawerOpen(true);
+    setCategoryDrawerDirty(false);
+    clearDirty("expenses-category-drawer");
   };
 
   const openEditCategory = (row: ExpenseCategory) => {
     setEditingCategory(row);
     setCategoryDrawerOpen(true);
+    setCategoryDrawerDirty(false);
     clearDirty("expenses-category-drawer");
   };
 
@@ -551,6 +588,7 @@ export default function ExpensesPanel() {
           }
           message.success("Category updated.");
           setCategoryDrawerOpen(false);
+          setCategoryDrawerDirty(false);
           clearDirty("expenses-category-drawer");
           await loadCategories();
         } else if (data.message) {
@@ -571,6 +609,7 @@ export default function ExpensesPanel() {
           }
           message.success("Category saved.");
           setCategoryDrawerOpen(false);
+          setCategoryDrawerDirty(false);
           clearDirty("expenses-category-drawer");
           await loadCategories();
           if (data.category?.id) {
@@ -637,6 +676,14 @@ export default function ExpensesPanel() {
         render: (a: number) => formatInr(a)
       },
       {
+        title: "Status",
+        dataIndex: "status",
+        key: "status",
+        render: (status: ExpenseRow["status"]) => (
+          <Tag color={status === "deleted" ? "red" : "green"}>{status === "deleted" ? "Deleted" : "Success"}</Tag>
+        )
+      },
+      {
         title: "Expense Type",
         key: "expenseType",
         render: (_, row) => row.categoryName ?? row.expenseTypeLabel ?? "Category"
@@ -669,21 +716,27 @@ export default function ExpensesPanel() {
         fixed: "right",
         render: (_, row) => (
           <Space>
-            <Button
-              type="link"
-              size="small"
-              icon={<EditOutlined />}
-              aria-label="Edit expense"
-              onClick={() => openEditExpense(row)}
-            />
-            <Button
-              type="link"
-              size="small"
-              danger
-              icon={<DeleteOutlined />}
-              aria-label="Delete expense"
-              onClick={() => confirmDeleteExpense(row)}
-            />
+            {row.status === "deleted" ? (
+              <Text type="secondary">—</Text>
+            ) : (
+              <>
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<EditOutlined />}
+                  aria-label="Edit expense"
+                  onClick={() => openEditExpense(row)}
+                />
+                <Button
+                  type="link"
+                  size="small"
+                  danger
+                  icon={<DeleteOutlined />}
+                  aria-label="Delete expense"
+                  onClick={() => confirmDeleteExpense(row)}
+                />
+              </>
+            )}
           </Space>
         )
       }
@@ -704,6 +757,7 @@ export default function ExpensesPanel() {
     () => [
       { label: "Date", value: "date" },
       { label: "Amount", value: "amount" },
+      { label: "Status", value: "status" },
       { label: "Expense Type", value: "expenseType" },
       { label: "Branch", value: "branch" },
       { label: "Employee", value: "employee" },
@@ -760,11 +814,11 @@ export default function ExpensesPanel() {
   const filterableEmployeeOptions = useMemo(() => employeeOptions, [employeeOptions]);
 
   useEffect(() => {
-    if (!filterOpen || employeesLoading || staffUsers.length > 0) {
+    if (!filterOpen || employeesLoading || employeesLoadedOnce) {
       return;
     }
     void loadEmployees();
-  }, [filterOpen, employeesLoading, staffUsers.length, loadEmployees]);
+  }, [filterOpen, employeesLoading, employeesLoadedOnce, loadEmployees]);
 
   const countActiveFilters = useCallback((value: ExpenseFilters) => {
     let count = 0;
@@ -777,10 +831,10 @@ export default function ExpensesPanel() {
     if (value.employeeUserId) {
       count += 1;
     }
-    if (value.expenseKind !== "all") {
+    if (value.minAmount !== null || value.maxAmount !== null) {
       count += 1;
     }
-    if (value.minAmount !== null || value.maxAmount !== null) {
+    if (value.status !== "all") {
       count += 1;
     }
     if (value.dateRange?.[0] || value.dateRange?.[1]) {
@@ -796,7 +850,6 @@ export default function ExpensesPanel() {
   const applyFilters = (nextFilters: ExpenseFilters) => {
     setFilters(nextFilters);
     setExpensesPage(1);
-    setSummaryPage(1);
     setFilterOpen(false);
     globalThis.localStorage.setItem(
       FILTER_STORAGE_KEY,
@@ -811,7 +864,6 @@ export default function ExpensesPanel() {
   const clearFilters = () => {
     setFilters(initialFilters);
     setExpensesPage(1);
-    setSummaryPage(1);
     setFilterOpen(false);
     globalThis.localStorage.removeItem(FILTER_STORAGE_KEY);
   };
@@ -921,6 +973,76 @@ export default function ExpensesPanel() {
                     </Button>
                   </Space>
                 </div>
+                <div style={{ marginBottom: 16 }}>
+                  {filters.status !== "deleted" ? (
+                    <>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          marginBottom: 10,
+                          gap: 12
+                        }}
+                      >
+                        <Text strong>Expense-head overview</Text>
+                        <Text strong>Total: {formatInr(summaryTotal)}</Text>
+                      </div>
+                      {summaryLoading ? (
+                        <Text type="secondary">Loading overview...</Text>
+                      ) : summaryRows.length === 0 ? (
+                        <Empty
+                          image={Empty.PRESENTED_IMAGE_SIMPLE}
+                          description={
+                            <span>
+                              <div>No category totals for selected period</div>
+                              <Text type="secondary">Add expenses to see category-wise totals.</Text>
+                            </span>
+                          }
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            maxHeight: 248,
+                            overflowY: "auto",
+                            display: "grid",
+                            gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+                            gap: 12,
+                            paddingRight: 4
+                          }}
+                        >
+                          {summaryRows.map((row) => (
+                            <div
+                              key={row.categoryId ?? "uncategorized"}
+                              style={{
+                                border: `1px solid ${token.colorBorderSecondary}`,
+                                borderRadius: 10,
+                                padding: 10,
+                                background: token.colorBgContainer,
+                                minHeight: 108
+                              }}
+                            >
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                                <Text strong ellipsis={{ tooltip: row.categoryName }}>
+                                  {row.categoryName}
+                                </Text>
+                                <Text type="secondary" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+                                  {row.expenseCount}
+                                </Text>
+                              </div>
+                              <div style={{ marginTop: 6 }}>
+                                <Text type="secondary" style={{ display: "block", fontSize: 12 }}>
+                                  Total Amount
+                                </Text>
+                                <Text style={{ fontWeight: 600 }}>{formatInr(row.totalAmount)}</Text>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  ) : null}
+                </div>
                 <Table<ExpenseRow>
                   rowKey="id"
                   loading={expensesLoading}
@@ -956,55 +1078,6 @@ export default function ExpensesPanel() {
                   scroll={{ x: 1100, y: "calc(100vh - 120px)" }}
                   tableLayout="fixed"
                 />
-                <div style={{ marginTop: 24 }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      marginBottom: 10,
-                      gap: 12
-                    }}
-                  >
-                    <Text strong>Expense-head aggregation</Text>
-                    <Text strong>Total: {formatInr(summaryTotal)}</Text>
-                  </div>
-                  <Table<ExpenseCategorySummaryRow>
-                    rowKey={(row) => row.categoryId ?? "uncategorized"}
-                    loading={summaryLoading}
-                    columns={summaryColumns}
-                    dataSource={summaryRows}
-                    pagination={{
-                      current: summaryPage,
-                      pageSize: summaryPageSize,
-                      total: summaryRows.length,
-                      showSizeChanger: true,
-                      showQuickJumper: true,
-                      pageSizeOptions: ["10", "25", "50", "100"],
-                      size: "small",
-                      onChange: (page, pageSize) => {
-                        setSummaryPage(page);
-                        setSummaryPageSize(pageSize);
-                      },
-                      showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} categories`
-                    }}
-                    locale={{
-                      emptyText: (
-                        <Empty
-                          image={Empty.PRESENTED_IMAGE_SIMPLE}
-                          description={
-                            <span>
-                              <div>No category totals for selected period</div>
-                              <Text type="secondary">Add expenses to see category-wise totals.</Text>
-                            </span>
-                          }
-                        />
-                      )
-                    }}
-                    scroll={{ x: 520, y: "calc(100vh - 120px)" }}
-                    tableLayout="fixed"
-                  />
-                </div>
               </>
             )
           },
@@ -1053,9 +1126,10 @@ export default function ExpensesPanel() {
         onClose={() => {
           const close = () => {
             setExpenseDrawerOpen(false);
+            setExpenseDrawerDirty(false);
             clearDirty("expenses-expense-drawer");
           };
-          if (expenseForm.isFieldsTouched(true)) {
+          if (expenseDrawerDirty) {
             confirmNavigation(close);
             return;
           }
@@ -1068,9 +1142,10 @@ export default function ExpensesPanel() {
               onClick={() => {
                 const close = () => {
                   setExpenseDrawerOpen(false);
+                  setExpenseDrawerDirty(false);
                   clearDirty("expenses-expense-drawer");
                 };
-                if (expenseForm.isFieldsTouched(true)) {
+                if (expenseDrawerDirty) {
                   confirmNavigation(close);
                   return;
                 }
@@ -1090,6 +1165,7 @@ export default function ExpensesPanel() {
           layout="vertical"
           requiredMark
           onValuesChange={() => {
+            setExpenseDrawerDirty(true);
             setDirty("expenses-expense-drawer", true);
           }}
         >
@@ -1176,9 +1252,10 @@ export default function ExpensesPanel() {
         onClose={() => {
           const close = () => {
             setCategoryDrawerOpen(false);
+            setCategoryDrawerDirty(false);
             clearDirty("expenses-category-drawer");
           };
-          if (categoryForm.isFieldsTouched(true)) {
+          if (categoryDrawerDirty) {
             confirmNavigation(close);
             return;
           }
@@ -1191,9 +1268,10 @@ export default function ExpensesPanel() {
               onClick={() => {
                 const close = () => {
                   setCategoryDrawerOpen(false);
+                  setCategoryDrawerDirty(false);
                   clearDirty("expenses-category-drawer");
                 };
-                if (categoryForm.isFieldsTouched(true)) {
+                if (categoryDrawerDirty) {
                   confirmNavigation(close);
                   return;
                 }
@@ -1213,6 +1291,7 @@ export default function ExpensesPanel() {
           layout="vertical"
           requiredMark
           onValuesChange={() => {
+            setCategoryDrawerDirty(true);
             setDirty("expenses-category-drawer", true);
           }}
         >
@@ -1230,6 +1309,8 @@ export default function ExpensesPanel() {
                 onChange={(event) => {
                   const checked = event.target.checked;
                   setShowEmployeeDetailsToggle(checked);
+                  setCategoryDrawerDirty(true);
+                  setDirty("expenses-category-drawer", true);
                   if (!checked) {
                     setListBranchUsersToggle(false);
                     setMandatoryUserToggle(false);
@@ -1241,14 +1322,22 @@ export default function ExpensesPanel() {
               <Checkbox
                 checked={listBranchUsersToggle}
                 disabled={!showEmployeeDetailsToggle}
-                onChange={(event) => setListBranchUsersToggle(event.target.checked)}
+                onChange={(event) => {
+                  setListBranchUsersToggle(event.target.checked);
+                  setCategoryDrawerDirty(true);
+                  setDirty("expenses-category-drawer", true);
+                }}
               >
                 List users of current branch
               </Checkbox>
               <Checkbox
                 checked={mandatoryUserToggle}
                 disabled={!showEmployeeDetailsToggle}
-                onChange={(event) => setMandatoryUserToggle(event.target.checked)}
+                onChange={(event) => {
+                  setMandatoryUserToggle(event.target.checked);
+                  setCategoryDrawerDirty(true);
+                  setDirty("expenses-category-drawer", true);
+                }}
               >
                 Mandatory user field
               </Checkbox>

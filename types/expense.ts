@@ -16,6 +16,8 @@ export type ExpenseRow = {
   branchName: string | null;
   expenseType: "custom";
   expenseTypeLabel?: string;
+  status: "success" | "deleted";
+  deletedAt?: string | null;
   employeeUserId?: string | null;
   employeeName?: string | null;
   categoryId: string | null;
