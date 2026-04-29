@@ -20,11 +20,13 @@ import {
   Table,
   Tag,
   Tooltip,
+  Upload,
   Typography,
   theme
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { TableProps } from "antd";
+import type { UploadFile } from "antd/es/upload/interface";
 import {
   CloseCircleOutlined,
   ClockCircleOutlined,
@@ -33,6 +35,7 @@ import {
   EditOutlined,
   EyeOutlined,
   HomeOutlined,
+  InboxOutlined,
   PhoneOutlined,
   PlusOutlined
 } from "@ant-design/icons";
@@ -144,6 +147,14 @@ type MemberLookupResponse = {
 };
 type SubscriptionCreateResponse = { success: boolean; message?: string };
 type SubscriptionPatchResponse = { success: boolean; message?: string };
+type ImportMembersResponse = {
+  success: boolean;
+  message?: string;
+  totalRows?: number;
+  successCount?: number;
+  failedCount?: number;
+  failures?: Array<{ row: number; message: string }>;
+};
 type MemberTableColumnKey = "member" | "status" | "phone" | "age" | "plan" | "paymentStatus" | "billing" | "actions";
 
 function ageFromDob(iso: string | null): string {
@@ -286,6 +297,10 @@ export default function MembersPanel({
   const [cancelTarget, setCancelTarget] = useState<Member | null>(null);
   const [cancelRefundAmount, setCancelRefundAmount] = useState<number | null>(null);
   const [cancelSubmitting, setCancelSubmitting] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importSubmitting, setImportSubmitting] = useState(false);
+  const [importFileList, setImportFileList] = useState<UploadFile[]>([]);
+  const [importSummary, setImportSummary] = useState<ImportMembersResponse | null>(null);
   const [visibleColumnKeys, setVisibleColumnKeys] = useState<MemberTableColumnKey[]>([
     "member",
     "status",
@@ -305,6 +320,8 @@ export default function MembersPanel({
   const watchedPlanId = Form.useWatch("planId", form);
   const isAssigningNewMembership = Boolean(newMembershipTarget);
   const { setDirty, clearDirty, confirmNavigation } = useUnsavedChanges();
+  const MAX_IMPORT_FILE_SIZE_BYTES = 2 * 1024 * 1024;
+  const { Dragger } = Upload;
 
   const loadPlans = useCallback(async (branchId: string) => {
     if (!branchId) {
@@ -774,6 +791,50 @@ export default function MembersPanel({
       message.error(msg ?? "Delete failed.");
     }
   }, [message, loadMembers]);
+
+  const openImportModal = useCallback(() => {
+    setImportOpen(true);
+    setImportSummary(null);
+    setImportFileList([]);
+  }, []);
+
+  const submitMemberImport = useCallback(async () => {
+    const selected = importFileList[0];
+    if (!selected || !("originFileObj" in selected) || !selected.originFileObj) {
+      message.error("Please select an Excel file.");
+      return;
+    }
+    if (!effectiveBranchId) {
+      message.error("Select an active branch before importing.");
+      return;
+    }
+    const formData = new FormData();
+    formData.append("file", selected.originFileObj);
+    formData.append("branchId", effectiveBranchId);
+    setImportSubmitting(true);
+    try {
+      const { data } = await apiClient.post<ImportMembersResponse>("/gym/members/import", formData, {
+        headers: { "Content-Type": "multipart/form-data" }
+      });
+      if (data.success) {
+        setImportSummary(data);
+        await loadMembers();
+        message.success(
+          `Import completed. ${data.successCount ?? 0} success, ${data.failedCount ?? 0} failed.`
+        );
+      } else {
+        message.error(data.message ?? "Import failed.");
+      }
+    } catch (e: unknown) {
+      const msg =
+        e && typeof e === "object" && "response" in e
+          ? (e as { response?: { data?: { message?: string } } }).response?.data?.message
+          : undefined;
+      message.error(msg ?? "Could not import members.");
+    } finally {
+      setImportSubmitting(false);
+    }
+  }, [importFileList, effectiveBranchId, message, loadMembers]);
 
   const getRowActionItems = useCallback((record: Member) => [
     {
@@ -1308,6 +1369,9 @@ export default function MembersPanel({
             defaultFilename="members.csv"
             disabled={!effectiveBranchId}
           />
+          <Button onClick={openImportModal} disabled={!canCreateMember || !effectiveBranchId}>
+            Import members
+          </Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openCreate()} disabled={!canCreateMember}>
             Add member
           </Button>
@@ -1413,6 +1477,80 @@ export default function MembersPanel({
         ) : (
           <Text type="secondary">No current membership found.</Text>
         )}
+      </Modal>
+
+      <Modal
+        title="Import members"
+        open={importOpen}
+        onCancel={() => {
+          if (importSubmitting) {
+            return;
+          }
+          setImportOpen(false);
+        }}
+        footer={[
+          <Button key="cancel" onClick={() => setImportOpen(false)} disabled={importSubmitting}>
+            Cancel
+          </Button>,
+          <Button key="import" type="primary" loading={importSubmitting} onClick={() => void submitMemberImport()}>
+            Start import
+          </Button>
+        ]}
+      >
+        <Text type="secondary">
+          Accepted headers: customer_id, first_name, last_name, mobile_number(10_digit_only), gender, date_of_birth,
+          date_of_joining, address, membership_start_date, membership_end_date, membership_plan, paid_amount
+        </Text>
+        <div style={{ marginTop: 12 }}>
+          <Dragger
+            multiple={false}
+            accept=".xlsx,.xls"
+            fileList={importFileList}
+            beforeUpload={(file) => {
+              const isExcel =
+                file.name.toLowerCase().endsWith(".xlsx") || file.name.toLowerCase().endsWith(".xls");
+              if (!isExcel) {
+                message.error("Only .xlsx or .xls files are allowed.");
+                return Upload.LIST_IGNORE;
+              }
+              if (file.size > MAX_IMPORT_FILE_SIZE_BYTES) {
+                message.error("File size should be less than 2 MB.");
+                return Upload.LIST_IGNORE;
+              }
+              return false;
+            }}
+            onChange={({ fileList }) => {
+              setImportSummary(null);
+              setImportFileList(fileList.slice(-1));
+            }}
+            onRemove={() => {
+              setImportSummary(null);
+              setImportFileList([]);
+            }}
+          >
+            <p className="ant-upload-drag-icon">
+              <InboxOutlined />
+            </p>
+            <p className="ant-upload-text">Click or drag Excel file to this area</p>
+            <p className="ant-upload-hint">Max size: 2 MB</p>
+          </Dragger>
+        </div>
+        {importSummary ? (
+          <Alert
+            style={{ marginTop: 12 }}
+            type={importSummary.failedCount ? "warning" : "success"}
+            showIcon
+            message={`Processed ${importSummary.totalRows ?? 0} rows. Success: ${importSummary.successCount ?? 0}, Failed: ${importSummary.failedCount ?? 0}.`}
+            description={
+              importSummary.failures && importSummary.failures.length > 0
+                ? importSummary.failures
+                    .slice(0, 10)
+                    .map((failure) => `Row ${failure.row}: ${failure.message}`)
+                    .join(" | ")
+                : "All rows imported successfully."
+            }
+          />
+        ) : null}
       </Modal>
 
 
