@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { Suspense, useEffect, useState } from "react";
 import { Layout, theme } from "antd";
 import AppBar from "./components/AppBar/appBar";
 import Sidebar from "./components/Sidebar/Sidebar";
@@ -92,7 +92,9 @@ const DashboardLayout: React.FC<Props> = ({ children }) => {
       <Layout style={{ height: "100vh", overflow: "hidden" }}>
         <AppBar onHeightChange={setAppBarHeight} />
         <Layout style={{ marginTop: appBarHeight, height: `calc(100vh - ${appBarHeight}px)`, display: "flex" }}>
-          <Sidebar appBarHeight={appBarHeight} onCollapseChange={setSidebarCollapsed} />
+          <Suspense fallback={null}>
+            <Sidebar appBarHeight={appBarHeight} onCollapseChange={setSidebarCollapsed} />
+          </Suspense>
           <Layout
             style={{
               marginLeft: sidebarCollapsed ? 80 : 240,

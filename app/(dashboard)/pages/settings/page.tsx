@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { App, Avatar, Button, Card, Form, Input, Space, Upload } from "antd";
+import { App, Avatar, Button, Card, Form, Input, Progress, Space, Upload } from "antd";
 import { DeleteOutlined, ShopOutlined, UploadOutlined, UserOutlined } from "@ant-design/icons";
 import RbacPermissionGuard from "@/app/components/Auth/RbacPermissionGuard";
 import { FEATURES, hasFeature } from "@/utils/permissions";
@@ -11,6 +11,8 @@ import apiClient from "@/utils/api";
 import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
 import { isValidIndianMobile, stripToIndianMobileDigits, toE164IndianMobile } from "@/utils/mobileValidation";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
+import type { GymUsageSnapshotResponse } from "@/types/usage";
 
 type ProfileFormValues = {
   fullName: string;
@@ -26,7 +28,34 @@ type GymFormValues = {
   supportPhone?: string;
 };
 
-type SettingsSectionKey = "profile" | "gym";
+type SettingsSectionKey = "profile" | "gym" | "pricing";
+type CurrentGymPlanResponse = {
+  success: boolean;
+  gymSubscription?: {
+    planName?: string;
+    startDate?: string | null;
+    endDate?: string | null;
+    billingStart?: string | null;
+    billingEnd?: string | null;
+  };
+};
+type UsageView = {
+  key: "members" | "users" | "branches" | "expenses";
+  label: string;
+  current: number;
+  max: number;
+};
+
+function formatDateLabel(value?: string | null): string {
+  if (!value) {
+    return "—";
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "—";
+  }
+  return parsed.toLocaleDateString("en-GB");
+}
 
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -55,9 +84,20 @@ export default function SettingsPage() {
   // undefined => unchanged, string => new/uploaded logo, null => explicitly remove logo
   const [logoFile, setLogoFile] = useState<string | null | undefined>(undefined);
   const [gymSaving, setGymSaving] = useState(false);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [currentPlanName, setCurrentPlanName] = useState<string>("free");
+  const [currentPlanStartAt, setCurrentPlanStartAt] = useState<string | null>(null);
+  const [currentPlanEndAt, setCurrentPlanEndAt] = useState<string | null>(null);
+  const [usageRows, setUsageRows] = useState<UsageView[]>([]);
   const { setDirty, clearDirty } = useUnsavedChanges();
 
-  const activeSection = (searchParams.get("tab") === "gym" ? "gym" : "profile") as SettingsSectionKey;
+  const activeSection = (
+    searchParams.get("tab") === "gym"
+      ? "gym"
+      : searchParams.get("tab") === "pricing"
+        ? "pricing"
+        : "profile"
+  ) as SettingsSectionKey;
   const roleLabel = useMemo(() => {
     if (!session?.user?.defaults?.gymId || !session.user.associatedGyms) {
       return "Staff";
@@ -73,6 +113,65 @@ export default function SettingsPage() {
       clearDirty("settings-page");
     };
   }, [clearDirty]);
+
+  useEffect(() => {
+    if (activeSection !== "pricing") {
+      return;
+    }
+    const loadCurrentPlan = async () => {
+      setPlanLoading(true);
+      try {
+        const [{ data: planData }, { data: usageData }] = await Promise.all([
+          apiClient.get<CurrentGymPlanResponse>("/gym/pricing-plans/current-gym-plan"),
+          apiClient.get<GymUsageSnapshotResponse>("/gym/usage/check")
+        ]);
+        if (!planData.success) {
+          return;
+        }
+        const planName = planData.gymSubscription?.planName ?? "free";
+        const planStart = planData.gymSubscription?.billingStart ?? planData.gymSubscription?.startDate ?? null;
+        const planEnd = planData.gymSubscription?.billingEnd ?? planData.gymSubscription?.endDate ?? null;
+        setCurrentPlanName(planName);
+        setCurrentPlanStartAt(planStart);
+        setCurrentPlanEndAt(planEnd);
+        if (usageData.success && usageData.usage) {
+          setUsageRows([
+            {
+              key: "members",
+              label: "Members",
+              current: usageData.usage.members,
+              max: usageData.usage.maxMembers
+            },
+            {
+              key: "users",
+              label: "Users",
+              current: usageData.usage.users,
+              max: usageData.usage.maxUsers
+            },
+            {
+              key: "branches",
+              label: "Branches",
+              current: usageData.usage.branches,
+              max: usageData.usage.maxBranches
+            },
+            {
+              key: "expenses",
+              label: "Expenses",
+              current: usageData.usage.expenses,
+              max: usageData.usage.maxExpenses
+            }
+          ]);
+        } else {
+          setUsageRows([]);
+        }
+      } catch {
+        message.error("Could not load current plan details.");
+      } finally {
+        setPlanLoading(false);
+      }
+    };
+    void loadCurrentPlan();
+  }, [activeSection, message]);
 
   const saveGymProfile = async () => {
     if (!canEditGymProfile) {
@@ -289,7 +388,7 @@ export default function SettingsPage() {
               </Space>
             </Form>
         </Card>
-      ) : (
+      ) : activeSection === "gym" ? (
         <Card title="Gym Settings">
             <Form
               key={gymName}
@@ -361,6 +460,38 @@ export default function SettingsPage() {
                 </Button>
               </Space>
             </Form>
+        </Card>
+      ) : (
+        <Card title="Subscription & Pricing">
+          <Space direction="vertical" size={12}>
+            <p>Manage your gym subscription, compare plans, and upgrade instantly.</p>
+            <div>
+              <div><strong>Current plan:</strong> {currentPlanName.toUpperCase()}</div>
+              <div><strong>Started at:</strong> {planLoading ? "Loading..." : formatDateLabel(currentPlanStartAt)}</div>
+              <div><strong>Expires at:</strong> {planLoading ? "Loading..." : formatDateLabel(currentPlanEndAt)}</div>
+            </div>
+            <div>
+              <strong>Usage</strong>
+              <Space direction="vertical" size={8} style={{ width: "100%", marginTop: 8 }}>
+                {usageRows.map((row) => {
+                  const max = row.max > 0 ? row.max : 1;
+                  const percent = Math.min(100, Math.round((row.current / max) * 100));
+                  return (
+                    <div key={row.key}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                        <span>{row.label}</span>
+                        <span>{row.current} / {row.max}</span>
+                      </div>
+                      <Progress percent={percent} size="small" showInfo={false} />
+                    </div>
+                  );
+                })}
+              </Space>
+            </div>
+            <Button type="primary">
+              <Link href="/pricing?from=subscription">Manage / Upgrade Plan</Link>
+            </Button>
+          </Space>
         </Card>
       )}
     </RbacPermissionGuard>

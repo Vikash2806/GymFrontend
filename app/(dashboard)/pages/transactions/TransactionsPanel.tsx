@@ -304,35 +304,38 @@ export default function TransactionsPanel() {
     setFilterOpen(false);
   };
 
-  const metricCards: MetricCard[] = [
-    {
-      key: "collected",
-      title: "Collected Amount (range)",
-      value: insights.successfulAmount,
-      accent: token.colorPrimary,
-      bg: token.colorPrimaryBg,
-      icon: <WalletOutlined />,
-      formatter: (value: number) => formatInr(value)
-    },
-    {
-      key: "refunded",
-      title: "Refunded Amount (range)",
-      value: insights.refundedAmount,
-      accent: token.colorWarning,
-      bg: token.colorWarningBg,
-      icon: <DollarCircleOutlined />,
-      formatter: (value: number) => formatInr(value)
-    },
-    {
-      key: "totalRevenue",
-      title: "Total Revenue",
-      value: insights.successfulAmount - insights.refundedAmount,
-      accent: token.colorInfo,
-      bg: token.colorInfoBg,
-      icon: <TransactionOutlined />,
-      formatter: (value: number) => formatInr(value)
-    }
-  ];
+  const metricCards: MetricCard[] = useMemo(
+    () => [
+      {
+        key: "collected",
+        title: "Collected Amount (range)",
+        value: insights.successfulAmount,
+        accent: token.colorPrimary,
+        bg: token.colorPrimaryBg,
+        icon: <WalletOutlined />,
+        formatter: (value: number) => formatInr(value)
+      },
+      {
+        key: "refunded",
+        title: "Refunded Amount (range)",
+        value: insights.refundedAmount,
+        accent: token.colorWarning,
+        bg: token.colorWarningBg,
+        icon: <DollarCircleOutlined />,
+        formatter: (value: number) => formatInr(value)
+      },
+      {
+        key: "totalRevenue",
+        title: "Total Revenue",
+        value: insights.successfulAmount - insights.refundedAmount,
+        accent: token.colorInfo,
+        bg: token.colorInfoBg,
+        icon: <TransactionOutlined />,
+        formatter: (value: number) => formatInr(value)
+      }
+    ],
+    [insights.refundedAmount, insights.successfulAmount, token.colorInfo, token.colorInfoBg, token.colorPrimary, token.colorPrimaryBg, token.colorWarning, token.colorWarningBg]
+  );
   const visibleMetricCards = useMemo(() => {
     if (filters.status === "success") {
       return metricCards.filter((card) => card.key === "collected");

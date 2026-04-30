@@ -42,6 +42,7 @@ import { formatInr } from "@/utils/formatCurrency";
 import ExportButton from "@/app/components/Export/ExportButton";
 import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
 import ExpensesFilterModal, { type ExpenseFilters } from "./ExpensesFilterModal";
+import type { GymUsageSnapshotResponse } from "@/types/usage";
 
 const { Title, Text } = Typography;
 const FILTER_STORAGE_KEY = "expenseFilters";
@@ -121,6 +122,7 @@ export default function ExpensesPanel() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryRows, setSummaryRows] = useState<ExpenseCategorySummaryRow[]>([]);
   const [summaryTotal, setSummaryTotal] = useState(0);
+  const [expenseLimitReached, setExpenseLimitReached] = useState(false);
 
   const [expenseDrawerOpen, setExpenseDrawerOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<ExpenseRow | null>(null);
@@ -274,6 +276,15 @@ export default function ExpensesPanel() {
     }
   }, [buildExpenseQueryParams]);
 
+  const loadUsage = useCallback(async () => {
+    try {
+      const { data } = await apiClient.get<GymUsageSnapshotResponse>("/gym/usage/check");
+      setExpenseLimitReached(Boolean(data.limitsReached?.expenses));
+    } catch {
+      setExpenseLimitReached(false);
+    }
+  }, []);
+
   const loadCategorySummary = useCallback(async () => {
     if (filters.status === "deleted") {
       setSummaryRows([]);
@@ -352,6 +363,10 @@ export default function ExpensesPanel() {
     }
     void loadExpenses();
   }, [loadExpenses, filtersHydrated]);
+
+  useEffect(() => {
+    void loadUsage();
+  }, [loadUsage]);
 
   useEffect(() => {
     if (!filtersHydrated) {
@@ -475,6 +490,7 @@ export default function ExpensesPanel() {
           clearDirty("expenses-expense-drawer");
           void loadExpenses();
           void loadCategorySummary();
+          void loadUsage();
         } else if (data.message) {
           message.error(data.message);
         }
@@ -498,13 +514,14 @@ export default function ExpensesPanel() {
         message.success("Expense deleted.");
         void loadExpenses();
         void loadCategorySummary();
+        void loadUsage();
       } else if (data.message) {
         message.error(data.message);
       }
     } catch {
       message.error("Could not delete expense.");
     }
-  }, [message, loadExpenses, loadCategorySummary]);
+  }, [message, loadExpenses, loadCategorySummary, loadUsage]);
 
   const confirmDeleteExpense = useCallback((row: ExpenseRow) => {
     modal.confirm({
@@ -794,23 +811,6 @@ export default function ExpensesPanel() {
     }
   ];
 
-  const summaryColumns: ColumnsType<ExpenseCategorySummaryRow> = [
-    { title: "Category", dataIndex: "categoryName", key: "categoryName" },
-    {
-      title: "Expenses",
-      dataIndex: "expenseCount",
-      key: "expenseCount",
-      width: 120
-    },
-    {
-      title: "Total Amount",
-      dataIndex: "totalAmount",
-      key: "totalAmount",
-      width: 180,
-      render: (amount: number) => formatInr(amount)
-    }
-  ];
-
   const filterableEmployeeOptions = useMemo(() => employeeOptions, [employeeOptions]);
 
   useEffect(() => {
@@ -968,7 +968,13 @@ export default function ExpensesPanel() {
                       params={buildExpenseQueryParams(true)}
                       defaultFilename="expenses.csv"
                     />
-                    <Button type="primary" icon={<PlusOutlined />} onClick={openAddExpense}>
+                    <Button
+                      type="primary"
+                      icon={<PlusOutlined />}
+                      onClick={openAddExpense}
+                      disabled={expenseLimitReached}
+                      title={expenseLimitReached ? "Expense limit reached. Upgrade plan to add more expenses." : undefined}
+                    >
                       Add expense
                     </Button>
                   </Space>

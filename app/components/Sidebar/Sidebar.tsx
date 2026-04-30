@@ -7,7 +7,6 @@ import {
   SettingOutlined,
   ArrowLeftOutlined,
   ArrowRightOutlined,
-  AppstoreOutlined,
   BankOutlined,
   TeamOutlined,
   MoneyCollectOutlined,
@@ -76,7 +75,10 @@ const settingsMenuItems: MenuItem[] = [
     key: "master",
     label: "Master Settings",
     icon: <SettingOutlined />,
-    children: [{ key: "settings-gym", label: "Gym Settings", route: "/pages/settings?tab=gym" }]
+    children: [
+      { key: "settings-gym", label: "Gym Settings", route: "/pages/settings?tab=gym" },
+      { key: "settings-pricing", label: "Subscription & Pricing", route: "/pages/settings?tab=pricing" }
+    ]
   },
 ];
 

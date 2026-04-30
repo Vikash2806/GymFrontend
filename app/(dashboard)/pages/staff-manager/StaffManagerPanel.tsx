@@ -35,6 +35,7 @@ import { useRouter } from "next/navigation";
 import ExportButton from "@/app/components/Export/ExportButton";
 import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
 import StaffUserDetailsModal from "./StaffUserDetailsModal";
+import type { GymUsageSnapshotResponse } from "@/types/usage";
 
 const { Title, Text } = Typography;
 
@@ -145,6 +146,7 @@ export default function StaffManagerPanel() {
   const [form] = Form.useForm<FormValues>();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsUserId, setDetailsUserId] = useState<string | null>(null);
+  const [userLimitReached, setUserLimitReached] = useState(false);
   const { setDirty, clearDirty, confirmNavigation } = useUnsavedChanges();
 
   const canAccess = canAccessStaffUsersModule(session);
@@ -185,9 +187,22 @@ export default function StaffManagerPanel() {
     }
   }, [canAccess, message, page, pageSize, roleFilter, searchQuery, defaultBranchId]);
 
+  const loadUsage = useCallback(async () => {
+    try {
+      const { data } = await apiClient.get<GymUsageSnapshotResponse>("/gym/usage/check");
+      setUserLimitReached(Boolean(data.limitsReached?.users));
+    } catch {
+      setUserLimitReached(false);
+    }
+  }, []);
+
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void loadUsage();
+  }, [loadUsage]);
 
   useEffect(() => {
     const timer = globalThis.setTimeout(() => {
@@ -322,6 +337,7 @@ export default function StaffManagerPanel() {
           return;
         }
         message.success("User created.");
+        await loadUsage();
       }
       setModalOpen(false);
       setEditing(null);
@@ -349,6 +365,7 @@ export default function StaffManagerPanel() {
       }
       message.success("User deactivated.");
       await load();
+      await loadUsage();
     } catch {
       message.error("Delete failed.");
     }
@@ -493,7 +510,13 @@ export default function StaffManagerPanel() {
               { value: "staff", label: "Staff" }
             ]}
           />
-          <Button type="primary" icon={<UserAddOutlined />} onClick={openCreate} disabled={!canCreateStaff}>
+          <Button
+            type="primary"
+            icon={<UserAddOutlined />}
+            onClick={openCreate}
+            disabled={!canCreateStaff || userLimitReached}
+            title={userLimitReached ? "User limit reached. Upgrade plan to add more users." : undefined}
+          >
             Create User
           </Button>
           <ExportButton

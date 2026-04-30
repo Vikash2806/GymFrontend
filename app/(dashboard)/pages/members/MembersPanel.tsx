@@ -43,6 +43,7 @@ import dayjs, { type Dayjs } from "dayjs";
 import apiClient from "@/utils/api";
 import type { Member } from "@/types/member";
 import type { MembershipPlan } from "@/types/membership";
+import type { GymUsageSnapshotResponse } from "@/types/usage";
 import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
 import { stripToIndianMobileDigits } from "@/utils/mobileValidation";
@@ -294,6 +295,7 @@ export default function MembersPanel({
   const [lookupNote, setLookupNote] = useState<string>("");
   const [newMembershipTarget, setNewMembershipTarget] = useState<Member | null>(null);
   const [pendingCreatedPlan, setPendingCreatedPlan] = useState<{ _id: string; name: string } | null>(null);
+  const [memberLimitReached, setMemberLimitReached] = useState(false);
   const [cancelTarget, setCancelTarget] = useState<Member | null>(null);
   const [cancelRefundAmount, setCancelRefundAmount] = useState<number | null>(null);
   const [cancelSubmitting, setCancelSubmitting] = useState(false);
@@ -396,6 +398,19 @@ export default function MembersPanel({
     }
   }, [effectiveBranchId, statusFilter, membersPage, membersPageSize, debouncedNameSearch, onMemberCountChange, message]);
 
+  const loadMemberUsage = useCallback(async () => {
+    if (!effectiveBranchId) {
+      setMemberLimitReached(false);
+      return;
+    }
+    try {
+      const { data } = await apiClient.get<GymUsageSnapshotResponse>("/gym/usage/check");
+      setMemberLimitReached(Boolean(data.limitsReached?.members));
+    } catch {
+      setMemberLimitReached(false);
+    }
+  }, [effectiveBranchId]);
+
   const planBranchId = useMemo(() => {
     if (editing) {
       return "";
@@ -434,6 +449,10 @@ export default function MembersPanel({
   useEffect(() => {
     void loadMembers();
   }, [loadMembers]);
+
+  useEffect(() => {
+    void loadMemberUsage();
+  }, [loadMemberUsage]);
 
   useEffect(() => {
     const timer = globalThis.setTimeout(() => {
@@ -780,6 +799,7 @@ export default function MembersPanel({
       if (data.success) {
         message.success("Member deleted.");
         await loadMembers();
+        await loadMemberUsage();
       } else {
         message.error(data.message ?? "Delete failed.");
       }
@@ -790,7 +810,7 @@ export default function MembersPanel({
           : undefined;
       message.error(msg ?? "Delete failed.");
     }
-  }, [message, loadMembers]);
+  }, [message, loadMembers, loadMemberUsage]);
 
   const openImportModal = useCallback(() => {
     setImportOpen(true);
@@ -1120,6 +1140,7 @@ export default function MembersPanel({
         setModalDirty(false);
         clearDirty("members-modal");
         await loadMembers();
+        await loadMemberUsage();
       } else {
         message.error(data.message ?? "Create failed.");
       }
@@ -1372,9 +1393,16 @@ export default function MembersPanel({
           <Button onClick={openImportModal} disabled={!canCreateMember || !effectiveBranchId}>
             Import members
           </Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => openCreate()} disabled={!canCreateMember}>
-            Add member
-          </Button>
+          <Tooltip title={memberLimitReached ? "Member limit reached. Upgrade plan to add more members." : ""}>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => openCreate()}
+              disabled={!canCreateMember || memberLimitReached}
+            >
+              Add member
+            </Button>
+          </Tooltip>
         </Space>
       </div>
 

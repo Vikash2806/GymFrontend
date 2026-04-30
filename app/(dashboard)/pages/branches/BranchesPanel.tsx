@@ -40,6 +40,7 @@ import { setSession } from "@/redux/features/auth/authSlice";
 import type { SessionPayload } from "@/redux/features/auth/sessionTypes";
 import ExportButton from "@/app/components/Export/ExportButton";
 import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
+import type { GymUsageSnapshotResponse } from "@/types/usage";
 
 const { Title, Text } = Typography;
 
@@ -134,6 +135,7 @@ export default function BranchesPanel() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<BranchRow | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [branchLimitReached, setBranchLimitReached] = useState(false);
   const [modalDirty, setModalDirty] = useState(false);
   const { setDirty, clearDirty, confirmNavigation } = useUnsavedChanges();
   const countryOptions = useMemo(() => getCountryOptions("en", "code"), []);
@@ -193,9 +195,22 @@ export default function BranchesPanel() {
     }
   }, [message, page, pageSize]);
 
+  const loadUsage = useCallback(async () => {
+    try {
+      const { data } = await apiClient.get<GymUsageSnapshotResponse>("/gym/usage/check");
+      setBranchLimitReached(Boolean(data.limitsReached?.branches));
+    } catch {
+      setBranchLimitReached(false);
+    }
+  }, []);
+
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void loadUsage();
+  }, [loadUsage]);
 
   /** Form lives inside Modal; only set values after the modal (and Form) is mounted to avoid useForm disconnect warnings. */
   useEffect(() => {
@@ -229,6 +244,13 @@ export default function BranchesPanel() {
       clearDirty("branches-modal");
     }
   }, [modalOpen, editing, form, clearDirty, countryOptions, stateOptions, cityOptions]);
+
+  const openCreate = () => {
+    setEditing(null);
+    setModalOpen(true);
+    setModalDirty(false);
+    clearDirty("branches-modal");
+  };
 
   const openEdit = (record: BranchRow) => {
     setEditing(record);
@@ -281,6 +303,7 @@ export default function BranchesPanel() {
       setModalDirty(false);
       clearDirty("branches-modal");
       await load();
+      await loadUsage();
     } catch (e) {
       if (e && typeof e === "object" && "errorFields" in (e as object)) {
         return;
@@ -301,6 +324,7 @@ export default function BranchesPanel() {
       message.success("Branch deleted.");
       await refreshSession(dispatch);
       await load();
+      await loadUsage();
     } catch {
       message.error("Delete failed.");
     }
@@ -431,9 +455,15 @@ export default function BranchesPanel() {
           </Title>
           <Space wrap>
             <ExportButton endpoint="/gym/exports/branches" defaultFilename="branches.csv" />
-            {/* <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+            <Button
+              type="primary"
+              icon={<BankOutlined />}
+              onClick={openCreate}
+              disabled={branchLimitReached}
+              title={branchLimitReached ? "Branch limit reached. Upgrade plan to add more branches." : undefined}
+            >
               Add Branch
-            </Button> */}
+            </Button>
           </Space>
         </Flex>
 
