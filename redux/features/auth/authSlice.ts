@@ -382,12 +382,16 @@ const authSlice = createSlice({
         state.error = null;
       })
       .addCase(signupAsync.fulfilled, (state, action) => {
+        // Backend returns a fully usable session (token + user + gym).
+        // Persist it so subsequent /auth/me, /gym/* calls are authenticated.
         state.loading = false;
-        state.isLoggedIn = false;
-        state.userData = null;
+        state.isLoggedIn = true;
+        state.userData = action.payload;
         if (typeof window !== "undefined") {
-          localStorage.removeItem("userData");
-          clearAuthCookie();
+          localStorage.setItem("userData", JSON.stringify(toStorageSession(action.payload)));
+          if (action.payload.token) {
+            persistAuthCookie(action.payload.token);
+          }
         }
       })
       .addCase(signupAsync.rejected, (state, action) => {

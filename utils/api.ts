@@ -18,8 +18,23 @@ apiClient.interceptors.request.use((config) => {
 
   try {
     const parsed = JSON.parse(raw) as {
+      token?: string;
       user?: { defaults?: { gymId?: string; branchId?: string } };
     };
+
+    // Always attach the JWT as a Bearer token. The backend also reads the
+    // gym_access_token cookie, but cross-origin HttpOnly cookies are unreliable
+    // in many browsers (third-party cookie blocking, tracking prevention, etc.).
+    // Sending the token in the Authorization header guarantees authentication
+    // works regardless of cookie policies.
+    const token =
+      typeof parsed?.token === "string" && parsed.token.trim().length > 0
+        ? parsed.token.trim()
+        : null;
+    if (token && !config.headers["Authorization"]) {
+      config.headers["Authorization"] = `Bearer ${token}`;
+    }
+
     const gymId = parsed?.user?.defaults?.gymId;
     const branchId = parsed?.user?.defaults?.branchId;
     if (gymId) {
