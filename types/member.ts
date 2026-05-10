@@ -3,6 +3,14 @@ export type MemberPaymentBlock = {
   paidAmount: number;
   pendingAmount: number;
   status: "paid" | "partial" | "pending";
+  amountReceived?: number;
+};
+
+export type SubscriptionPricing = {
+  listPrice: number;
+  amountReceived: number;
+  varianceFromList: number;
+  varianceKind: "discount" | "premium" | "none";
 };
 
 export type Member = {
@@ -35,6 +43,7 @@ export type Member = {
     endDate: string;
     status: string;
     payment: MemberPaymentBlock;
+    pricing?: SubscriptionPricing | null;
   } | null;
   financialSummary: {
     lifetime: { totalPaid: number; totalPending: number };
