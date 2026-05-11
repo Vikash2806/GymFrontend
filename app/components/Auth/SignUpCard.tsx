@@ -116,7 +116,9 @@ export default function SignUpCard() {
     }
 
     if (signupAsync.fulfilled.match(result)) {
-      router.replace("/login");
+      // Signup returns a valid session (token + user + gym). Send the user
+      // directly into the dashboard instead of back to /login.
+      router.replace(getFirstAccessibleRoute(result.payload));
     }
   };
 

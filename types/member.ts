@@ -3,6 +3,14 @@ export type MemberPaymentBlock = {
   paidAmount: number;
   pendingAmount: number;
   status: "paid" | "partial" | "pending";
+  amountReceived?: number;
+};
+
+export type SubscriptionPricing = {
+  listPrice: number;
+  amountReceived: number;
+  varianceFromList: number;
+  varianceKind: "discount" | "premium" | "none";
 };
 
 export type Member = {
@@ -17,6 +25,9 @@ export type Member = {
     gender: string;
     dob: string | null;
     profilePicture: string | null;
+    /** CSV migration snapshot age (years); use `dob` for live age when set. */
+    ageYears?: number | null;
+    weightKg?: number | null;
   };
   address: {
     street: string;
@@ -35,6 +46,7 @@ export type Member = {
     endDate: string;
     status: string;
     payment: MemberPaymentBlock;
+    pricing?: SubscriptionPricing | null;
   } | null;
   financialSummary: {
     lifetime: { totalPaid: number; totalPending: number };

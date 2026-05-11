@@ -320,7 +320,16 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
                       <Descriptions.Item label="Date of Birth">
                         {member.profile.dob ? formatDisplayDate(member.profile.dob) : "N/A"}
                       </Descriptions.Item>
-                      <Descriptions.Item label="Age">{ageFromDob(member.profile.dob)}</Descriptions.Item>
+                      <Descriptions.Item label="Age">
+                        {member.profile.dob
+                          ? ageFromDob(member.profile.dob)
+                          : member.profile.ageYears != null && Number.isFinite(member.profile.ageYears)
+                            ? `${member.profile.ageYears} (from import)`
+                            : "—"}
+                      </Descriptions.Item>
+                      {member.profile.weightKg != null && Number.isFinite(member.profile.weightKg) ? (
+                        <Descriptions.Item label="Weight (kg)">{member.profile.weightKg}</Descriptions.Item>
+                      ) : null}
                     </Descriptions>
                     <Divider orientationMargin={8} />
                     <Text strong>Membership</Text>
