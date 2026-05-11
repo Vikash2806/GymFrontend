@@ -41,6 +41,8 @@ const RevenueTrendChart = dynamic(() => import("./RevenueTrendChart"), {
 
 const { Title, Text } = Typography;
 
+const ALL_MONTHS_VALUE = 0;
+
 const MONTHS: { value: number; label: string }[] = [
   { value: 1, label: "January" },
   { value: 2, label: "February" },
@@ -55,11 +57,49 @@ const MONTHS: { value: number; label: string }[] = [
   { value: 11, label: "November" },
   { value: 12, label: "December" }
 ];
+const MONTH_OPTIONS: { value: number; label: string }[] = [
+  { value: ALL_MONTHS_VALUE, label: "All months (until now)" },
+  ...MONTHS
+];
 const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 type RevenueYearTrendResponse = {
   success: boolean;
   trend?: Array<{ month: number; amount: number }>;
 };
+type ExpensesYearTrendResponse = {
+  success: boolean;
+  trend?: Array<{ month: number; amount: number }>;
+};
+
+/**
+ * Resolve which calendar month should drive the per-month finance overview API call
+ * when "All months" is the user's selection. Past years use December (full year);
+ * the current year uses the live month so snapshot data (overdue, pending list) stays fresh.
+ */
+function resolveEffectiveMonth(month: number, year: number): number {
+  if (month !== ALL_MONTHS_VALUE) {
+    return month;
+  }
+  const now = new Date();
+  if (year === now.getFullYear()) {
+    return now.getMonth() + 1;
+  }
+  if (year > now.getFullYear()) {
+    return 1;
+  }
+  return 12;
+}
+
+/** Sum monthly trend amounts up to (and including) `untilMonth`. */
+function sumTrendUntil(trend: Array<{ month: number; amount: number }>, untilMonth: number): number {
+  let total = 0;
+  for (const row of trend) {
+    if (row.month <= untilMonth) {
+      total += row.amount ?? 0;
+    }
+  }
+  return Math.round(total * 100) / 100;
+}
 
 export default function FinancialOverviewPanel() {
   const { message } = App.useApp();
@@ -85,22 +125,29 @@ export default function FinancialOverviewPanel() {
   const [revenueTrendData, setRevenueTrendData] = useState<
     { month: number; label: string; amount: number; year: number }[]
   >([]);
+  const [loadingExpensesTrend, setLoadingExpensesTrend] = useState(false);
+  const [expensesTrendData, setExpensesTrendData] = useState<
+    { month: number; amount: number; year: number }[]
+  >([]);
   const overviewReady = overview !== null;
   const selectedBranchId = session?.activeBranch?.id ?? session?.user?.defaults?.branchId ?? "";
   const overviewReqSeq = useRef(0);
   const paymentsReqSeq = useRef(0);
   const pendingReqSeq = useRef(0);
   const revenueTrendReqSeq = useRef(0);
+  const expensesTrendReqSeq = useRef(0);
+  const isAllMonths = month === ALL_MONTHS_VALUE;
+  const effectiveMonth = useMemo(() => resolveEffectiveMonth(month, year), [month, year]);
 
   const loadOverview = useCallback(async () => {
     const reqId = ++overviewReqSeq.current;
     setLoadingOverview(true);
     try {
-      const params: Record<string, string | number> = { year, month };
+      const params: Record<string, string | number> = { year, month: effectiveMonth };
       if (selectedBranchId) {
         params.branchId = selectedBranchId;
       }
-      const cacheKey = `finance-overview:${year}:${month}:${selectedBranchId || "all"}`;
+      const cacheKey = `finance-overview:${year}:${effectiveMonth}:${selectedBranchId || "all"}`;
       const data = await fetchCached(
         cacheKey,
         async () => (await apiClient.get<FinanceOverviewResponse>("/gym/finance/overview", { params })).data,
@@ -125,16 +172,16 @@ export default function FinancialOverviewPanel() {
         setLoadingOverview(false);
       }
     }
-  }, [year, month, selectedBranchId, message]);
+  }, [year, effectiveMonth, selectedBranchId, message]);
 
   useEffect(() => {
     setPaymentsPage(1);
     setPendingPage(1);
-  }, [year, month, selectedBranchId]);
+  }, [year, effectiveMonth, selectedBranchId]);
 
   useEffect(() => {
     void loadOverview();
-  }, [year, month, selectedBranchId, loadOverview]);
+  }, [year, effectiveMonth, selectedBranchId, loadOverview]);
 
   const loadPaymentsPage = useCallback(async () => {
     const reqId = ++paymentsReqSeq.current;
@@ -142,7 +189,7 @@ export default function FinancialOverviewPanel() {
     try {
       const params: Record<string, string | number> = {
         year,
-        month,
+        month: effectiveMonth,
         paymentsPage,
         paymentsPageSize
       };
@@ -171,7 +218,7 @@ export default function FinancialOverviewPanel() {
         setLoadingPaymentsCard(false);
       }
     }
-  }, [year, month, selectedBranchId, paymentsPage, paymentsPageSize]);
+  }, [year, effectiveMonth, selectedBranchId, paymentsPage, paymentsPageSize]);
 
   const loadPendingPage = useCallback(async () => {
     const reqId = ++pendingReqSeq.current;
@@ -179,7 +226,7 @@ export default function FinancialOverviewPanel() {
     try {
       const params: Record<string, string | number> = {
         year,
-        month,
+        month: effectiveMonth,
         pendingPage,
         pendingPageSize
       };
@@ -208,7 +255,7 @@ export default function FinancialOverviewPanel() {
         setLoadingPendingCard(false);
       }
     }
-  }, [year, month, selectedBranchId, pendingPage, pendingPageSize]);
+  }, [year, effectiveMonth, selectedBranchId, pendingPage, pendingPageSize]);
 
   useEffect(() => {
     if (!overviewReady) {
@@ -266,13 +313,88 @@ export default function FinancialOverviewPanel() {
     void loadRevenueTrend();
   }, [loadRevenueTrend]);
 
+  const loadExpensesTrend = useCallback(async () => {
+    const reqId = ++expensesTrendReqSeq.current;
+    setLoadingExpensesTrend(true);
+    try {
+      const params: Record<string, string | number> = { year };
+      if (selectedBranchId) {
+        params.branchId = selectedBranchId;
+      }
+      const cacheKey = `finance-expenses-trend:${year}:${selectedBranchId || "all"}`;
+      const data = await fetchCached(
+        cacheKey,
+        async () => (await apiClient.get<ExpensesYearTrendResponse>("/gym/finance/expenses-trend", { params })).data,
+        20_000
+      );
+      if (reqId !== expensesTrendReqSeq.current) {
+        return;
+      }
+      const trendMap = new Map((data.trend ?? []).map((item) => [item.month, item.amount]));
+      const nextData = Array.from({ length: 12 }, (_, index) => ({
+        month: index + 1,
+        amount: trendMap.get(index + 1) ?? 0,
+        year
+      }));
+      setExpensesTrendData(nextData);
+    } catch {
+      if (reqId !== expensesTrendReqSeq.current) {
+        return;
+      }
+      setExpensesTrendData([]);
+      message.error("Could not load yearly expenses trend.");
+    } finally {
+      if (reqId === expensesTrendReqSeq.current) {
+        setLoadingExpensesTrend(false);
+      }
+    }
+  }, [year, selectedBranchId, message]);
+
+  // Lazily load the yearly expenses trend only when the user actually selects "All months".
+  // Single-month views remain unchanged and pay no extra round-trip.
+  useEffect(() => {
+    if (isAllMonths) {
+      void loadExpensesTrend();
+    }
+  }, [isAllMonths, loadExpensesTrend]);
+
   const periodLabel = useMemo(() => {
+    if (isAllMonths) {
+      return `All months · ${year}`;
+    }
     if (!overview) {
       return "";
     }
     const m = MONTHS.find((x) => x.value === overview.period.month)?.label ?? "";
     return `${m} ${overview.period.year}`;
-  }, [overview]);
+  }, [isAllMonths, year, overview]);
+
+  // Year-to-date totals when "All months" is selected. Revenue is sourced from the
+  // already-cached yearly bar-chart data; expenses come from the sibling year-trend
+  // endpoint. Overdue is a snapshot (member-level), so it is reused as-is from the
+  // per-month overview response.
+  const aggregatedRevenue = useMemo(() => {
+    if (!isAllMonths) {
+      return null;
+    }
+    return sumTrendUntil(revenueTrendData, effectiveMonth);
+  }, [isAllMonths, revenueTrendData, effectiveMonth]);
+
+  const aggregatedExpenses = useMemo(() => {
+    if (!isAllMonths) {
+      return null;
+    }
+    return sumTrendUntil(expensesTrendData, effectiveMonth);
+  }, [isAllMonths, expensesTrendData, effectiveMonth]);
+
+  const displayRevenue = isAllMonths ? (aggregatedRevenue ?? 0) : (overview?.totals.revenue ?? 0);
+  const displayExpenses = isAllMonths ? (aggregatedExpenses ?? 0) : (overview?.totals.expenses ?? 0);
+  const revenueCardLoading = isAllMonths
+    ? loadingRevenueTrend && revenueTrendData.length === 0
+    : loadingOverview;
+  const expensesCardLoading = isAllMonths
+    ? loadingExpensesTrend && expensesTrendData.length === 0
+    : loadingOverview;
 
   const kpiIconWrap = (bg: string, icon: React.ReactNode) => (
     <div
@@ -315,23 +437,23 @@ export default function FinancialOverviewPanel() {
             options={yearOptions.map((y) => ({ value: y, label: String(y) }))}
           />
           <Select
-            style={{ width: 140 }}
+            style={{ width: 180 }}
             value={month}
             onChange={setMonth}
-            options={MONTHS.map((m) => ({ value: m.value, label: m.label }))}
+            options={MONTH_OPTIONS}
           />
         </Space>
       </div>
 
       <Row gutter={[16, 16]}>
         <Col xs={24} md={8}>
-          <Card loading={loadingOverview} styles={{ body: { padding: 20 } }}>
+          <Card loading={revenueCardLoading} styles={{ body: { padding: 20 } }}>
             <Space align="start" size="middle" style={{ width: "100%" }}>
               {kpiIconWrap("#22c55e", <RiseOutlined />)}
               <div style={{ flex: 1, minWidth: 0 }}>
-                <Text type="secondary">Revenue</Text>
+                <Text type="secondary">Revenue{isAllMonths ? ` · ${periodLabel}` : ""}</Text>
                 <Statistic
-                  value={overview?.totals.revenue ?? 0}
+                  value={displayRevenue}
                   formatter={(v) => formatInr(Number(v))}
                   valueStyle={{
                     fontSize: "clamp(20px, 2.1vw, 28px)",
@@ -365,13 +487,13 @@ export default function FinancialOverviewPanel() {
           </Card>
         </Col>
         <Col xs={24} md={8}>
-          <Card loading={loadingOverview} styles={{ body: { padding: 20 } }}>
+          <Card loading={expensesCardLoading} styles={{ body: { padding: 20 } }}>
             <Space align="start" size="middle" style={{ width: "100%" }}>
               {kpiIconWrap("#ef4444", <WalletOutlined />)}
               <div style={{ flex: 1, minWidth: 0 }}>
-                <Text type="secondary">Expenses</Text>
+                <Text type="secondary">Expenses{isAllMonths ? ` · ${periodLabel}` : ""}</Text>
                 <Statistic
-                  value={overview?.totals.expenses ?? 0}
+                  value={displayExpenses}
                   formatter={(v) => formatInr(Number(v))}
                   valueStyle={{
                     fontSize: "clamp(20px, 2.1vw, 28px)",
