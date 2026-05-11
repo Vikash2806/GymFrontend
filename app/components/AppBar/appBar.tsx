@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   App,
   Layout,
@@ -91,6 +91,8 @@ async function refreshSession(dispatch: ReturnType<typeof useAppDispatch>) {
 export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
   const { message } = App.useApp();
   const headerRef = useRef<HTMLDivElement>(null);
+  /** Avoid SSR vs client hydration mismatch: Redux session (gym name, logo) is absent on server. */
+  const [sessionReady, setSessionReady] = useState(false);
   const { token } = theme.useToken();
   const session = useAppSelector(selectSession);
   const dispatch = useAppDispatch();
@@ -155,6 +157,10 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
   }, [userRole]);
 
   useEffect(() => {
+    setSessionReady(true);
+  }, []);
+
+  useEffect(() => {
     if (headerRef.current) {
       onHeightChange(headerRef.current.clientHeight);
     }
@@ -191,7 +197,7 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
     { key: "logout", label: "Logout", icon: <LogoutOutlined /> }
   ];
 
-  const displayName = gym?.name ?? "Gym Admin";
+  const displayName = sessionReady ? (gym?.name ?? "Gym Admin") : "Gym Admin";
   const initials =
     session?.user?.fullName
       ?.split(" ")
@@ -245,11 +251,15 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
       }}
     >
       <Flex align="flex-start" gap={12} style={{ minWidth: 0, flex: "0 1 auto" }}>
-        <Flex style={{ paddingTop: 2 }}>{gym ? renderGymLogo(38) : (
-          <Avatar shape="square" size={38} style={{ backgroundColor: token.colorPrimary }}>
-            <ShopOutlined />
-          </Avatar>
-        )}</Flex>
+        <Flex style={{ paddingTop: 2 }}>
+          {sessionReady && gym ? (
+            renderGymLogo(38)
+          ) : (
+            <Avatar shape="square" size={38} style={{ backgroundColor: token.colorPrimary }}>
+              <ShopOutlined />
+            </Avatar>
+          )}
+        </Flex>
 
         <Flex vertical gap={2} style={{ minWidth: 0 }}>
           <Flex align="center" wrap={false} gap={8} style={{ minWidth: 0 }}>

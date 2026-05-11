@@ -25,6 +25,9 @@ export type Member = {
     gender: string;
     dob: string | null;
     profilePicture: string | null;
+    /** CSV migration snapshot age (years); use `dob` for live age when set. */
+    ageYears?: number | null;
+    weightKg?: number | null;
   };
   address: {
     street: string;

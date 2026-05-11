@@ -175,6 +175,17 @@ function ageFromDob(iso: string | null): string {
   return age >= 0 ? String(age) : "—";
 }
 
+function displayMemberAge(m: Member): string {
+  if (m.profile.dob) {
+    return ageFromDob(m.profile.dob);
+  }
+  const y = m.profile.ageYears;
+  if (y !== undefined && y !== null && Number.isFinite(Number(y))) {
+    return String(y);
+  }
+  return "—";
+}
+
 function billingCell(m: Member, token: { colorWarning: string }) {
   const p = m.currentSubscription?.payment;
   if (!p) {
@@ -1217,7 +1228,7 @@ export default function MembersPanel({
         title: "Age",
         key: "age",
         width: 64,
-        render: (_, record) => ageFromDob(record.profile.dob)
+        render: (_, record) => displayMemberAge(record)
       },
       {
         title: "Membership",
