@@ -111,6 +111,8 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
   const { token } = theme.useToken();
   const { confirmNavigation } = useUnsavedChanges();
   const session = useAppSelector(selectSession);
+  const [sessionReady, setSessionReady] = useState(false);
+  const displaySession = sessionReady ? session : null;
 
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [openKeys, setOpenKeys] = useState<string[]>([]);
@@ -122,47 +124,51 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
   const mainMenuItemsFiltered = useMemo(() => {
     return mainMenuItems.filter((item) => {
       if (item.key === "Dashboard") {
-        return hasFeature(session, FEATURES.DASHBOARD);
+        return hasFeature(displaySession, FEATURES.DASHBOARD);
       }
       if (item.key === "StaffManager") {
-        return hasFeature(session, FEATURES.STAFF_MANAGEMENT);
+        return hasFeature(displaySession, FEATURES.STAFF_MANAGEMENT);
       }
       if (item.key === "Branches") {
-        return hasFeature(session, FEATURES.BRANCH_MANAGEMENT);
+        return hasFeature(displaySession, FEATURES.BRANCH_MANAGEMENT);
       }
       if (item.key === "GymMembers") {
-        return hasFeature(session, FEATURES.MEMBER_MANAGEMENT);
+        return hasFeature(displaySession, FEATURES.MEMBER_MANAGEMENT);
       }
       if (item.key === "Billing") {
-        return hasFeature(session, FEATURES.BILLING_DASHBOARD);
+        return hasFeature(displaySession, FEATURES.BILLING_DASHBOARD);
       }
       if (item.key === "Transactions") {
-        return hasFeature(session, FEATURES.BILLING_DASHBOARD);
+        return hasFeature(displaySession, FEATURES.BILLING_DASHBOARD);
       }
       if (item.key === "Finance") {
-        return hasFeature(session, FEATURES.FINANCIAL_OVERVIEW);
+        return hasFeature(displaySession, FEATURES.FINANCIAL_OVERVIEW);
       }
       if (item.key === "RbacAdmin") {
-        return hasFeature(session, FEATURES.RBAC_SETTINGS);
+        return hasFeature(displaySession, FEATURES.RBAC_SETTINGS);
       }
       if (item.key === "Expenses") {
-        return hasFeature(session, FEATURES.EXPENSES);
+        return hasFeature(displaySession, FEATURES.EXPENSES);
       }
       if (item.key === "Settings") {
-        return hasFeature(session, FEATURES.SETTINGS);
+        return hasFeature(displaySession, FEATURES.SETTINGS);
       }
       return true;
     });
-  }, [session]);
+  }, [displaySession]);
 
   const settingsMenuItemsFiltered = useMemo(() => {
     return settingsMenuItems.filter((item) => {
       if (item.key === "settings-rbac") {
-        return hasFeature(session, FEATURES.RBAC_SETTINGS);
+        return hasFeature(displaySession, FEATURES.RBAC_SETTINGS);
       }
       return true;
     });
-  }, [session]);
+  }, [displaySession]);
+
+  useEffect(() => {
+    setSessionReady(true);
+  }, []);
 
   const routeMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -211,7 +217,7 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
     const routesToPrefetch = new Set<string>([
       ...Object.values(routeMap),
       ...frequentRoutes,
-      getFirstAccessibleRoute(session)
+      getFirstAccessibleRoute(displaySession)
     ]);
 
     routesToPrefetch.forEach((route) => {
@@ -219,7 +225,7 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
         void router.prefetch(route);
       }
     });
-  }, [routeMap, router, session]);
+  }, [routeMap, router, displaySession]);
 
   const handleClick: MenuProps["onClick"] = (e) => {
     setSelectedKeys([e.key]);
@@ -241,7 +247,7 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
   );
 
   const navigateBackToMain = () => {
-    const firstRoute = getFirstAccessibleRoute(session);
+    const firstRoute = getFirstAccessibleRoute(displaySession);
     const nextRoute = firstRoute === "/pages/settings" ? "/pages/dashboard" : firstRoute;
     confirmNavigation(() => router.push(nextRoute));
   };

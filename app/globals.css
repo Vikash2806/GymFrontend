@@ -48,11 +48,6 @@ a {
   text-decoration: none;
 }
 
-/* AppBar branch Select: no hard border on panel (shadow only) */
-.appbar-branch-select-popup.ant-select-dropdown {
-  border: none !important;
-}
-
 /* Keep dashboard tables readable on narrow screens:
    never split words letter-by-letter; use horizontal scroll instead. */
 .ant-table-wrapper .ant-table-cell,

@@ -11,7 +11,6 @@ import {
   Dropdown,
   theme,
   type MenuProps,
-  Select,
   Flex
 } from "antd";
 import {
@@ -91,22 +90,23 @@ async function refreshSession(dispatch: ReturnType<typeof useAppDispatch>) {
 export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
   const { message } = App.useApp();
   const headerRef = useRef<HTMLDivElement>(null);
-  /** Avoid SSR vs client hydration mismatch: Redux session (gym name, logo) is absent on server. */
+  /** Avoid SSR vs client hydration mismatch: Redux session is absent on server. */
   const [sessionReady, setSessionReady] = useState(false);
   const { token } = theme.useToken();
   const session = useAppSelector(selectSession);
+  const displaySession = sessionReady ? session : null;
   const dispatch = useAppDispatch();
   const router = useRouter();
   const pathname = usePathname();
   const { confirmNavigation } = useUnsavedChanges();
 
-  const gym = session?.gym;
-  const activeBranch = session?.activeBranch;
+  const gym = displaySession?.gym;
+  const activeBranch = displaySession?.activeBranch;
   const branches = gym?.branches;
-  const gymId = session?.user?.defaults?.gymId ?? gym?.id ?? "";
-  const membership = session?.user?.associatedGyms?.find((g) => g.gymId === gymId);
-  const canOpenSettings = hasFeature(session, FEATURES.SETTINGS);
-  const userRole = String(session?.rbac?.role ?? membership?.gymRole ?? "").toLowerCase();
+  const gymId = displaySession?.user?.defaults?.gymId ?? gym?.id ?? "";
+  const membership = displaySession?.user?.associatedGyms?.find((g) => g.gymId === gymId);
+  const canOpenSettings = hasFeature(displaySession, FEATURES.SETTINGS);
+  const userRole = String(displaySession?.rbac?.role ?? membership?.gymRole ?? "").toLowerCase();
   const isOwner = userRole === "owner";
   const assignedBranchIds = useMemo(() => {
     const allBranches = branches ?? [];
@@ -117,9 +117,9 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
     if (fromMembership.length > 0) {
       return [...new Set(fromMembership)];
     }
-    const fallback = session?.user?.defaults?.branchId ?? activeBranch?.id ?? "";
+    const fallback = displaySession?.user?.defaults?.branchId ?? activeBranch?.id ?? "";
     return fallback ? [fallback] : [];
-  }, [isOwner, branches, membership?.branches, session?.user?.defaults?.branchId, activeBranch?.id]);
+  }, [isOwner, branches, membership?.branches, displaySession?.user?.defaults?.branchId, activeBranch?.id]);
   const visibleBranches = useMemo(
     () => (branches ?? []).filter((branch) => assignedBranchIds.includes(branch.id)),
     [branches, assignedBranchIds]
@@ -131,6 +131,10 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
     }
     return visibleBranches[0]?.id;
   }, [activeBranch?.id, visibleBranches]);
+  const selectedBranch = useMemo(
+    () => visibleBranches.find((branch) => branch.id === selectedBranchId),
+    [visibleBranches, selectedBranchId]
+  );
   const workspaceLabel = useMemo(() => {
     if (userRole === "owner") {
       return "Gym owner workspace";
@@ -197,9 +201,9 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
     { key: "logout", label: "Logout", icon: <LogoutOutlined /> }
   ];
 
-  const displayName = sessionReady ? (gym?.name ?? "Gym Admin") : "Gym Admin";
+  const displayName = gym?.name ?? "Gym Admin";
   const initials =
-    session?.user?.fullName
+    displaySession?.user?.fullName
       ?.split(" ")
       .map((p) => p[0])
       .join("")
@@ -277,34 +281,24 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
             >
               {displayName}
             </Text>
-            {visibleBranches.length > 0 && (
-              <div
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  height: 32,
-                  maxWidth: 220,
-                  minWidth: 148,
-                  padding: "0 4px 0 6px",
-                  borderRadius: 8,
-                  background: token.colorFillQuaternary,
-                  border: "none",
-                  flex: "0 1 auto"
-                }}
-              >
-                <Select
-                  variant="borderless"
-                  value={selectedBranchId}
-                  options={visibleBranches.map((b) => ({ value: b.id, label: b.name }))}
-                  onChange={onBranchChange}
-                  disabled={visibleBranches.length <= 1}
-                  optionRender={(opt) => {
-                    const b = visibleBranches.find((x) => x.id === opt.value);
-                    if (!b) {
-                      return <span>{opt.label}</span>;
+            {sessionReady && visibleBranches.length > 0 && selectedBranch && (
+              <Dropdown
+                disabled={visibleBranches.length <= 1}
+                trigger={["click"]}
+                placement="bottomLeft"
+                overlayStyle={{ minWidth: 260 }}
+                menu={{
+                  selectable: true,
+                  selectedKeys: selectedBranchId ? [selectedBranchId] : [],
+                  onClick: ({ key }) => {
+                    if (key !== selectedBranchId) {
+                      void onBranchChange(key);
                     }
-                    return (
-                      <Flex align="center" gap={10} style={{ padding: "6px 4px", minWidth: 0 }}>
+                  },
+                  items: visibleBranches.map((b) => ({
+                    key: b.id,
+                    label: (
+                      <Flex align="center" gap={10} style={{ minWidth: 0, padding: "2px 0" }}>
                         <BranchAvatar branch={b} size={28} />
                         <Flex vertical gap={0} style={{ minWidth: 0, flex: 1 }}>
                           <Text strong ellipsis style={{ fontSize: 13, lineHeight: 1.35 }}>
@@ -315,65 +309,50 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
                           </Text>
                         </Flex>
                       </Flex>
-                    );
+                    )
+                  }))
+                }}
+              >
+                <button
+                  type="button"
+                  disabled={visibleBranches.length <= 1}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                    height: 32,
+                    maxWidth: 220,
+                    minWidth: 148,
+                    padding: "0 8px 0 6px",
+                    borderRadius: 8,
+                    background: token.colorFillQuaternary,
+                    border: "none",
+                    color: "inherit",
+                    font: "inherit",
+                    cursor: visibleBranches.length <= 1 ? "default" : "pointer",
+                    flex: "0 1 auto",
+                    overflow: "hidden",
+                    textAlign: "left"
                   }}
-                  labelRender={(props) => {
-                    const b = visibleBranches.find((x) => x.id === props.value);
-                    if (!b) {
-                      return <span>{props.label}</span>;
-                    }
-                    return (
-                      <Flex align="center" gap={8} style={{ minWidth: 0, width: "100%" }}>
-                        <BranchAvatar branch={b} size={22} />
-                        <Text
-                          ellipsis
-                          style={{
-                            fontSize: 13,
-                            fontWeight: 600,
-                            flex: 1,
-                            minWidth: 0,
-                            lineHeight: "32px"
-                          }}
-                        >
-                          {b.name}
-                        </Text>
-                      </Flex>
-                    );
-                  }}
-                  suffixIcon={
-                    <DownOutlined style={{ fontSize: 11, color: token.colorTextSecondary, marginInlineStart: 2 }} />
-                  }
-                  popupMatchSelectWidth={false}
-                  styles={{
-                    root: {
+                >
+                  <BranchAvatar branch={selectedBranch} size={22} />
+                  <Text
+                    ellipsis
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 600,
                       flex: 1,
                       minWidth: 0,
-                      height: 32
-                    },
-                    popup: {
-                      root: {
-                        border: "none",
-                        borderWidth: 0,
-                        minWidth: 260,
-                        boxShadow: token.boxShadowSecondary,
-                        borderRadius: token.borderRadiusLG,
-                        padding: 4,
-                        overflow: "hidden"
-                      }
-                    }
-                  }}
-                  classNames={{
-                    popup: {
-                      root: "appbar-branch-select-popup"
-                    }
-                  }}
-                  style={{
-                    width: "100%",
-                    minWidth: 0
-                  }}
-                  listHeight={280}
-                />
-              </div>
+                      lineHeight: "32px"
+                    }}
+                  >
+                    {selectedBranch.name}
+                  </Text>
+                  <DownOutlined
+                    style={{ fontSize: 11, color: token.colorTextSecondary, flexShrink: 0 }}
+                  />
+                </button>
+              </Dropdown>
             )}
           </Flex>
           <Text
@@ -416,7 +395,7 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
           <Dropdown menu={{ items: profileMenuItems, onClick: onProfileMenuClick }} trigger={["click"]}>
             <Avatar
               size={36}
-              src={session?.user?.profilePhoto || undefined}
+              src={displaySession?.user?.profilePhoto || undefined}
               style={{ backgroundColor: token.colorPrimary, cursor: "pointer" }}
             >
               {initials || <UserOutlined />}
