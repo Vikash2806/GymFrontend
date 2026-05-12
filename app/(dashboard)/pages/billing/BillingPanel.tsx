@@ -192,7 +192,7 @@ export default function BillingPanel() {
     }
     const values = await form.validateFields();
     const subId = payingMember.subscriptionId;
-    const pending = payingMember.pendingAmount;
+      const pending = payingMember.pendingAmount;
     if (values.amount > pending + 0.0001) {
       message.error(`Amount cannot exceed outstanding balance (${formatInr(pending)}).`);
       return;
@@ -279,7 +279,7 @@ export default function BillingPanel() {
         render: (_, record) => formatInr(record.paidAmount)
       },
       {
-        title: "Overdue Amount",
+        title: "Remaining Amount",
         key: "overdue",
         width: 150,
         align: "right" as const,

@@ -8,6 +8,7 @@ import { formatInrWhole } from "@/utils/formatCurrency";
 import type { Member } from "@/types/member";
 import apiClient from "@/utils/api";
 import type { ColumnsType } from "antd/es/table";
+import { calculateMembershipPaymentSummary } from "@/utils/membershipPaymentSummary";
 
 const { Title, Text } = Typography;
 
@@ -17,7 +18,18 @@ type SubscriptionHistoryItem = {
   status: "active" | "expired" | "cancelled" | "paused";
   startDate: string;
   endDate: string;
-  paymentSummary: { totalAmount: number; paidAmount: number; pendingAmount: number; status: string };
+  paymentSummary: {
+    planAmount?: number;
+    miscFeeAmount?: number;
+    personalTrainerFeeAmount?: number;
+    discountAmount?: number;
+    finalPayableAmount?: number;
+    paidAmount: number;
+    remainingAmount?: number;
+    totalAmount?: number;
+    pendingAmount?: number;
+    status: string;
+  };
   createdAt: string;
 };
 
@@ -81,6 +93,15 @@ function ageFromDob(iso: string | null): string {
 
 export default function MemberDetailsModal({ open, member, onClose }: MemberDetailsModalProps) {
   const { token } = theme.useToken();
+  const currentPayment = member?.currentSubscription?.payment
+    ? calculateMembershipPaymentSummary({
+        planPrice: member.currentSubscription.payment.planAmount ?? member.currentSubscription.payment.totalAmount ?? 0,
+        miscFeeAmount: member.currentSubscription.payment.miscFeeAmount,
+        personalTrainerFeeAmount: member.currentSubscription.payment.personalTrainerFeeAmount,
+        discountAmount: member.currentSubscription.payment.discountAmount,
+        paidAmount: member.currentSubscription.payment.paidAmount
+      })
+    : null;
   const [activeTab, setActiveTab] = useState<"details" | "history" | "transactions">("details");
   const [historyPage, setHistoryPage] = useState(1);
   const historyPageSize = 5;
@@ -92,26 +113,12 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
   const [paymentsLoading, setPaymentsLoading] = useState(false);
   const [paymentsTotal, setPaymentsTotal] = useState(0);
   const [payments, setPayments] = useState<MemberPaymentItem[]>([]);
+
   const paymentColumns: ColumnsType<MemberPaymentItem> = useMemo(
     () => [
-      {
-        title: "Subscription",
-        key: "planName",
-        dataIndex: "planName",
-        render: (value: string | undefined) => value ?? "Unknown plan"
-      },
-      {
-        title: "Payment Date",
-        key: "createdAt",
-        dataIndex: "createdAt",
-        render: (value: string) => formatDisplayDate(value)
-      },
-      {
-        title: "Method",
-        key: "method",
-        dataIndex: "method",
-        render: (value: string) => value.toUpperCase()
-      },
+      { title: "Subscription", key: "planName", dataIndex: "planName", render: (value: string | undefined) => value ?? "Unknown plan" },
+      { title: "Payment Date", key: "createdAt", dataIndex: "createdAt", render: (value: string) => formatDisplayDate(value) },
+      { title: "Method", key: "method", dataIndex: "method", render: (value: string) => value.toUpperCase() },
       {
         title: "Amount",
         key: "amount",
@@ -136,48 +143,25 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
     ],
     [token.colorError, token.colorSuccess]
   );
+
   const historyColumns: ColumnsType<SubscriptionHistoryItem> = useMemo(
     () => [
+      { title: "Plan", key: "planName", dataIndex: "planName", render: (value: string) => value || "—" },
+      { title: "Start Date", key: "startDate", dataIndex: "startDate", render: (value: string) => formatDisplayDate(value) },
+      { title: "End Date", key: "endDate", dataIndex: "endDate", render: (value: string) => formatDisplayDate(value) },
+      { title: "Paid", key: "paidAmount", align: "right", render: (_, row) => formatInrWhole(row.paymentSummary?.paidAmount ?? 0) },
       {
-        title: "Plan",
-        key: "planName",
-        dataIndex: "planName",
-        render: (value: string) => value || "—"
-      },
-      {
-        title: "Start Date",
-        key: "startDate",
-        dataIndex: "startDate",
-        render: (value: string) => formatDisplayDate(value)
-      },
-      {
-        title: "End Date",
-        key: "endDate",
-        dataIndex: "endDate",
-        render: (value: string) => formatDisplayDate(value)
-      },
-      {
-        title: "Paid",
-        key: "paidAmount",
+        title: "Remaining",
+        key: "remainingAmount",
         align: "right",
-        render: (_, row) => formatInrWhole(row.paymentSummary?.paidAmount ?? 0)
-      },
-      {
-        title: "Pending",
-        key: "pendingAmount",
-        align: "right",
-        render: (_, row) => formatInrWhole(row.paymentSummary?.pendingAmount ?? 0)
+        render: (_, row) => formatInrWhole(row.paymentSummary?.remainingAmount ?? row.paymentSummary?.pendingAmount ?? 0)
       },
       {
         title: "Status",
         key: "status",
         dataIndex: "status",
         render: (value: SubscriptionHistoryItem["status"]) => (
-          <Tag
-            color={
-              value === "active" ? "success" : value === "cancelled" ? "error" : value === "expired" ? "orange" : "default"
-            }
-          >
+          <Tag color={value === "active" ? "success" : value === "cancelled" ? "error" : value === "expired" ? "orange" : "default"}>
             {value.toUpperCase()}
           </Tag>
         )
@@ -194,6 +178,7 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
     setHistoryPage(1);
     setPaymentsPage(1);
   }, [open, member?._id]);
+
   useEffect(() => {
     if (!open || !member || activeTab !== "history") {
       return;
@@ -202,10 +187,9 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
     const loadHistory = async () => {
       setHistoryLoading(true);
       try {
-        const { data } = await apiClient.get<SubscriptionHistoryResponse>(
-          `/gym/members/${member._id}/subscriptions`,
-          { params: { page: historyPage, pageSize: historyPageSize } }
-        );
+        const { data } = await apiClient.get<SubscriptionHistoryResponse>(`/gym/members/${member._id}/subscriptions`, {
+          params: { page: historyPage, pageSize: historyPageSize }
+        });
         if (cancelled) {
           return;
         }
@@ -217,11 +201,10 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
           setHistoryTotal(0);
         }
       } catch {
-        if (cancelled) {
-          return;
+        if (!cancelled) {
+          setMembershipHistory([]);
+          setHistoryTotal(0);
         }
-        setMembershipHistory([]);
-        setHistoryTotal(0);
       } finally {
         if (!cancelled) {
           setHistoryLoading(false);
@@ -232,7 +215,7 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
     return () => {
       cancelled = true;
     };
-  }, [open, member, member?._id, activeTab, historyPage]);
+  }, [open, member, activeTab, historyPage]);
 
   useEffect(() => {
     if (!open || !member || activeTab !== "transactions") {
@@ -242,10 +225,9 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
     const loadPayments = async () => {
       setPaymentsLoading(true);
       try {
-        const { data } = await apiClient.get<MemberPaymentsResponse>(
-          `/gym/members/${member._id}/payments`,
-          { params: { page: paymentsPage, pageSize: paymentsPageSize } }
-        );
+        const { data } = await apiClient.get<MemberPaymentsResponse>(`/gym/members/${member._id}/payments`, {
+          params: { page: paymentsPage, pageSize: paymentsPageSize }
+        });
         if (cancelled) {
           return;
         }
@@ -257,11 +239,10 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
           setPaymentsTotal(0);
         }
       } catch {
-        if (cancelled) {
-          return;
+        if (!cancelled) {
+          setPayments([]);
+          setPaymentsTotal(0);
         }
-        setPayments([]);
-        setPaymentsTotal(0);
       } finally {
         if (!cancelled) {
           setPaymentsLoading(false);
@@ -272,18 +253,14 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
     return () => {
       cancelled = true;
     };
-  }, [open, member, member?._id, activeTab, paymentsPage]);
+  }, [open, member, activeTab, paymentsPage]);
 
   return (
     <Modal
       title="Member Details"
       open={open}
       onCancel={onClose}
-      footer={[
-        <Button key="close" type="primary" onClick={onClose}>
-          Close
-        </Button>
-      ]}
+      footer={[<Button key="close" type="primary" onClick={onClose}>Close</Button>]}
       width={WIDE_MODAL_WIDTH}
       styles={{ body: { maxHeight: "70vh", overflowY: "auto" } }}
     >
@@ -294,13 +271,9 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
               {!member.profile.profilePicture ? `${member.firstName.charAt(0)}${member.lastName.charAt(0)}` : null}
             </Avatar>
             <div>
-              <Title level={5} style={{ margin: 0 }}>
-                {member.firstName} {member.lastName}
-              </Title>
+              <Title level={5} style={{ margin: 0 }}>{member.firstName} {member.lastName}</Title>
               <Space size={8} style={{ marginTop: 8 }}>
-                <Tag color={member.status === "active" ? "success" : "error"}>
-                  {member.status === "active" ? "ACTIVE" : "INACTIVE"}
-                </Tag>
+                <Tag color={member.status === "active" ? "success" : "error"}>{member.status === "active" ? "ACTIVE" : "INACTIVE"}</Tag>
                 {member.flags?.hasPendingPayment ? <Tag color="warning">PAYMENT PENDING</Tag> : null}
               </Space>
             </div>
@@ -317,43 +290,27 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
                   <>
                     <Descriptions column={1} size="small" bordered>
                       <Descriptions.Item label="Phone">+91{member.profile.phone}</Descriptions.Item>
-                      <Descriptions.Item label="Date of Birth">
-                        {member.profile.dob ? formatDisplayDate(member.profile.dob) : "N/A"}
-                      </Descriptions.Item>
+                      <Descriptions.Item label="Date of Birth">{member.profile.dob ? formatDisplayDate(member.profile.dob) : "N/A"}</Descriptions.Item>
                       <Descriptions.Item label="Age">
-                        {member.profile.dob
-                          ? ageFromDob(member.profile.dob)
-                          : member.profile.ageYears != null && Number.isFinite(member.profile.ageYears)
-                            ? `${member.profile.ageYears} (from import)`
-                            : "—"}
+                        {member.profile.dob ? ageFromDob(member.profile.dob) : member.profile.ageYears != null && Number.isFinite(member.profile.ageYears) ? `${member.profile.ageYears} (from import)` : "—"}
                       </Descriptions.Item>
-                      {member.profile.weightKg != null && Number.isFinite(member.profile.weightKg) ? (
-                        <Descriptions.Item label="Weight (kg)">{member.profile.weightKg}</Descriptions.Item>
-                      ) : null}
+                      {member.profile.weightKg != null && Number.isFinite(member.profile.weightKg) ? <Descriptions.Item label="Weight (kg)">{member.profile.weightKg}</Descriptions.Item> : null}
                     </Descriptions>
                     <Divider orientationMargin={8} />
                     <Text strong>Membership</Text>
                     <Descriptions column={1} size="small" bordered style={{ marginTop: 8 }}>
-                      <Descriptions.Item label="Lifetime Total Paid (₹)">
-                        {formatInrWhole(member.financialSummary?.lifetime?.totalPaid ?? 0)}
-                      </Descriptions.Item>
+                      <Descriptions.Item label="Lifetime Total Paid (₹)">{formatInrWhole(member.financialSummary?.lifetime?.totalPaid ?? 0)}</Descriptions.Item>
                       <Descriptions.Item label="Membership Type">{member.currentSubscription?.planName ?? "—"}</Descriptions.Item>
-                      <Descriptions.Item label="Total Amount (₹)">
-                        {member.currentSubscription ? formatInrWhole(member.currentSubscription.payment.totalAmount) : "—"}
-                      </Descriptions.Item>
-                      <Descriptions.Item label="Start Date">
-                        {member.currentSubscription ? formatDisplayDate(member.currentSubscription.startDate) : "—"}
-                      </Descriptions.Item>
-                      <Descriptions.Item label="End Date">
-                        {member.currentSubscription ? formatDisplayDate(member.currentSubscription.endDate) : "—"}
-                      </Descriptions.Item>
-                      <Descriptions.Item label="Paid Amount (₹)">
-                        {member.currentSubscription ? formatInrWhole(member.currentSubscription.payment.paidAmount) : "—"}
-                      </Descriptions.Item>
-                      <Descriptions.Item label="Outstanding Amount (₹)">
-                        <Text type="danger">
-                          {member.currentSubscription ? formatInrWhole(member.currentSubscription.payment.pendingAmount) : "—"}
-                        </Text>
+                      <Descriptions.Item label="Plan Amount (₹)">{currentPayment ? formatInrWhole(currentPayment.planAmount) : "—"}</Descriptions.Item>
+                      <Descriptions.Item label="Misc Fees (₹)">{currentPayment ? formatInrWhole(currentPayment.miscFeeAmount) : "—"}</Descriptions.Item>
+                      <Descriptions.Item label="Trainer Fees (₹)">{currentPayment ? formatInrWhole(currentPayment.personalTrainerFeeAmount) : "—"}</Descriptions.Item>
+                      <Descriptions.Item label="Discount (₹)">{currentPayment ? formatInrWhole(currentPayment.discountAmount) : "—"}</Descriptions.Item>
+                      <Descriptions.Item label="Final Payable (₹)">{currentPayment ? formatInrWhole(currentPayment.finalPayableAmount) : "—"}</Descriptions.Item>
+                      <Descriptions.Item label="Start Date">{member.currentSubscription ? formatDisplayDate(member.currentSubscription.startDate) : "—"}</Descriptions.Item>
+                      <Descriptions.Item label="End Date">{member.currentSubscription ? formatDisplayDate(member.currentSubscription.endDate) : "—"}</Descriptions.Item>
+                      <Descriptions.Item label="Paid Amount (₹)">{currentPayment ? formatInrWhole(currentPayment.paidAmount) : "—"}</Descriptions.Item>
+                      <Descriptions.Item label="Remaining Amount (₹)">
+                        <Text type="danger">{currentPayment ? formatInrWhole(currentPayment.remainingAmount) : "—"}</Text>
                       </Descriptions.Item>
                     </Descriptions>
                     <Divider orientationMargin={8} />
@@ -361,9 +318,7 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
                     <Descriptions column={1} size="small" bordered style={{ marginTop: 8 }}>
                       <Descriptions.Item label="Gender">{member.profile.gender}</Descriptions.Item>
                       <Descriptions.Item label="Address">
-                        {[member.address.street, member.address.city, member.address.state, member.address.zipcode]
-                          .filter(Boolean)
-                          .join(", ") || "N/A"}
+                        {[member.address.street, member.address.city, member.address.state, member.address.zipcode].filter(Boolean).join(", ") || "N/A"}
                       </Descriptions.Item>
                     </Descriptions>
                   </>
@@ -374,30 +329,11 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
                 label: "Membership History",
                 children: (
                   <div style={{ marginTop: 4 }}>
-                    {historyLoading ? (
-                      <Text type="secondary">Loading history…</Text>
-                    ) : membershipHistory.length === 0 ? (
-                      <Text type="secondary">No membership history found.</Text>
-                    ) : (
+                    {historyLoading ? <Text type="secondary">Loading history...</Text> : membershipHistory.length === 0 ? <Text type="secondary">No membership history found.</Text> : (
                       <>
-                        <Table<SubscriptionHistoryItem>
-                          rowKey="_id"
-                          size="small"
-                          columns={historyColumns}
-                          dataSource={membershipHistory}
-                          pagination={false}
-                          scroll={{ x: 760 }}
-                          tableLayout="fixed"
-                        />
+                        <Table<SubscriptionHistoryItem> rowKey="_id" size="small" columns={historyColumns} dataSource={membershipHistory} pagination={false} scroll={{ x: 760 }} tableLayout="fixed" />
                         <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
-                          <Pagination
-                            size="small"
-                            current={historyPage}
-                            pageSize={historyPageSize}
-                            total={historyTotal}
-                            onChange={(nextPage) => setHistoryPage(nextPage)}
-                            showSizeChanger={false}
-                          />
+                          <Pagination size="small" current={historyPage} pageSize={historyPageSize} total={historyTotal} onChange={(nextPage) => setHistoryPage(nextPage)} showSizeChanger={false} />
                         </div>
                       </>
                     )}
@@ -409,30 +345,11 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
                 label: "Transactions",
                 children: (
                   <div style={{ marginTop: 4 }}>
-                    {paymentsLoading ? (
-                      <Text type="secondary">Loading transactions…</Text>
-                    ) : payments.length === 0 ? (
-                      <Text type="secondary">No transactions found.</Text>
-                    ) : (
+                    {paymentsLoading ? <Text type="secondary">Loading transactions...</Text> : payments.length === 0 ? <Text type="secondary">No transactions found.</Text> : (
                       <>
-                        <Table<MemberPaymentItem>
-                          rowKey="_id"
-                          size="small"
-                          columns={paymentColumns}
-                          dataSource={payments}
-                          pagination={false}
-                          scroll={{ x: 700 }}
-                          tableLayout="fixed"
-                        />
+                        <Table<MemberPaymentItem> rowKey="_id" size="small" columns={paymentColumns} dataSource={payments} pagination={false} scroll={{ x: 700 }} tableLayout="fixed" />
                         <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
-                          <Pagination
-                            size="small"
-                            current={paymentsPage}
-                            pageSize={paymentsPageSize}
-                            total={paymentsTotal}
-                            onChange={(nextPage) => setPaymentsPage(nextPage)}
-                            showSizeChanger={false}
-                          />
+                          <Pagination size="small" current={paymentsPage} pageSize={paymentsPageSize} total={paymentsTotal} onChange={(nextPage) => setPaymentsPage(nextPage)} showSizeChanger={false} />
                         </div>
                       </>
                     )}
@@ -444,7 +361,7 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
         </>
       ) : (
         <div style={{ padding: 24, textAlign: "center" }}>
-          <Text type="secondary">Loading…</Text>
+          <Text type="secondary">Loading...</Text>
         </div>
       )}
     </Modal>

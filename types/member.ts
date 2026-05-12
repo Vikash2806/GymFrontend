@@ -1,8 +1,15 @@
 export type MemberPaymentBlock = {
-  totalAmount: number;
+  planAmount: number;
+  miscFeeAmount: number;
+  personalTrainerFeeAmount: number;
+  discountAmount: number;
+  subtotalAmount: number;
+  finalPayableAmount: number;
   paidAmount: number;
-  pendingAmount: number;
+  remainingAmount: number;
   status: "paid" | "partial" | "pending";
+  totalAmount?: number;
+  pendingAmount?: number;
   amountReceived?: number;
 };
 
@@ -78,6 +85,11 @@ export type MemberFormValues = {
   zipcode?: string;
   country?: string;
   planId?: string;
+  miscFeesEnabled?: boolean;
+  miscFeeAmount?: number;
+  personalTrainerEnabled?: boolean;
+  personalTrainerFeeAmount?: number;
+  discountAmount?: number;
   paidAmount?: number;
   paymentMethod?: string;
   emergencyContacts?: Array<{ name?: string; phone?: string; relation?: string }>;

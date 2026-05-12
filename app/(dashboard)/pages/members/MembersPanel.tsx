@@ -50,6 +50,7 @@ import { stripToIndianMobileDigits } from "@/utils/mobileValidation";
 import { formatInrWhole } from "@/utils/formatCurrency";
 import { FEATURES, hasFeature } from "@/utils/permissions";
 import { getCityOptions, getCountryOptions, getStateOptions } from "@/utils/options";
+import { calculateMembershipPaymentSummary } from "@/utils/membershipPaymentSummary";
 import ExportButton from "@/app/components/Export/ExportButton";
 import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
 import MemberDetailsModal from "./MemberDetailsModal";
@@ -58,7 +59,7 @@ const { Title, Text } = Typography;
 const DEFAULT_COUNTRY_CODE = "IN";
 const DEFAULT_STATE_CODE = "TN";
 const DEFAULT_CITY_CODE = "TN_TNJ";
-const PLAN_PRICE_CAP_MESSAGE = "can't able to enter more than the membership price plan.";
+const PAYMENT_CAP_MESSAGE = "Paid amount cannot be greater than the final payable amount.";
 
 const TABLE_HEADER_STYLE: React.CSSProperties = { fontSize: 15, fontWeight: 600 };
 
@@ -122,6 +123,9 @@ function mapMemberFieldLabel(path: Array<string | number>): string {
     zipcode: "Zipcode",
     country: "Country",
     planId: "Membership plan",
+    miscFeeAmount: "Misc fees",
+    personalTrainerFeeAmount: "Personal trainer fee",
+    discountAmount: "Discount amount",
     paidAmount: "Paid amount",
     paymentMethod: "Payment method",
     notes: "Notes"
@@ -207,7 +211,7 @@ function billingCell(m: Member, token: { colorWarning: string }) {
     <Space direction="vertical" size={0}>
       <Space size={4}>
         <ClockCircleOutlined style={{ color: token.colorWarning }} />
-        <Text>{formatInrWhole(p.pendingAmount)}</Text>
+        <Text>{formatInrWhole(p.remainingAmount ?? p.pendingAmount ?? 0)}</Text>
       </Space>
       <Text type="secondary" style={{ fontSize: 12 }}>
         {endLabel}
@@ -231,6 +235,11 @@ type FormShape = {
   zipcode?: string;
   country?: string;
   planId?: string;
+  miscFeesEnabled: boolean;
+  miscFeeAmount?: number;
+  personalTrainerEnabled: boolean;
+  personalTrainerFeeAmount?: number;
+  discountAmount?: number;
   paidAmount?: number;
   paymentMethod: "cash" | "upi" | "card";
   emergencyContacts: Array<{ name: string; phone: string; relation: string }>;
@@ -331,6 +340,12 @@ export default function MembersPanel({
   const watchedCountry = Form.useWatch("country", form);
   const watchedState = Form.useWatch("state", form);
   const watchedPlanId = Form.useWatch("planId", form);
+  const watchedMiscFeesEnabled = Form.useWatch("miscFeesEnabled", form);
+  const watchedMiscFeeAmount = Form.useWatch("miscFeeAmount", form);
+  const watchedPersonalTrainerEnabled = Form.useWatch("personalTrainerEnabled", form);
+  const watchedPersonalTrainerFeeAmount = Form.useWatch("personalTrainerFeeAmount", form);
+  const watchedDiscountAmount = Form.useWatch("discountAmount", form);
+  const watchedPaidAmount = Form.useWatch("paidAmount", form);
   const isAssigningNewMembership = Boolean(newMembershipTarget);
   const { setDirty, clearDirty, confirmNavigation } = useUnsavedChanges();
   const MAX_IMPORT_FILE_SIZE_BYTES = 2 * 1024 * 1024;
@@ -438,6 +453,27 @@ export default function MembersPanel({
     const selectedPlan = plans.find((plan) => plan._id === watchedPlanId);
     return selectedPlan ? Number(selectedPlan.price ?? 0) : null;
   }, [plans, watchedPlanId]);
+  const paymentPreview = useMemo(
+    () =>
+      calculateMembershipPaymentSummary({
+        planPrice: selectedPlanPrice ?? 0,
+        miscFeesEnabled: Boolean(watchedMiscFeesEnabled),
+        miscFeeAmount: watchedMiscFeeAmount,
+        personalTrainerEnabled: Boolean(watchedPersonalTrainerEnabled),
+        personalTrainerFeeAmount: watchedPersonalTrainerFeeAmount,
+        discountAmount: watchedDiscountAmount,
+        paidAmount: watchedPaidAmount
+      }),
+    [
+      selectedPlanPrice,
+      watchedMiscFeesEnabled,
+      watchedMiscFeeAmount,
+      watchedPersonalTrainerEnabled,
+      watchedPersonalTrainerFeeAmount,
+      watchedDiscountAmount,
+      watchedPaidAmount
+    ]
+  );
 
   useEffect(() => {
     if (editing) {
@@ -456,6 +492,18 @@ export default function MembersPanel({
       form.setFieldsValue({ planId: undefined, paidAmount: 0 });
     }
   }, [editing, modalOpen, plans, form]);
+
+  useEffect(() => {
+    if (!watchedMiscFeesEnabled) {
+      form.setFieldValue("miscFeeAmount", 0);
+    }
+  }, [watchedMiscFeesEnabled, form]);
+
+  useEffect(() => {
+    if (!watchedPersonalTrainerEnabled) {
+      form.setFieldValue("personalTrainerFeeAmount", 0);
+    }
+  }, [watchedPersonalTrainerEnabled, form]);
 
   useEffect(() => {
     void loadMembers();
@@ -504,6 +552,17 @@ export default function MembersPanel({
     padding: 16,
     marginBottom: 16
   };
+  const paymentSummaryRowStyle: React.CSSProperties = {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 16,
+    alignItems: "center"
+  };
+  const paymentSummaryValueStyle: React.CSSProperties = {
+    minWidth: 96,
+    textAlign: "right",
+    fontVariantNumeric: "tabular-nums"
+  };
   const selectedCountryCode = (watchedCountry as string | undefined) ?? DEFAULT_COUNTRY_CODE;
   const stateOptions = useMemo(
     () => getStateOptions("en", selectedCountryCode, "code"),
@@ -541,6 +600,11 @@ export default function MembersPanel({
       state: DEFAULT_STATE_CODE,
       city: DEFAULT_CITY_CODE,
       country: DEFAULT_COUNTRY_CODE,
+      miscFeesEnabled: false,
+      miscFeeAmount: 0,
+      personalTrainerEnabled: false,
+      personalTrainerFeeAmount: 0,
+      discountAmount: 0,
       paidAmount: 0,
       paymentMethod: "cash" as const,
       emergencyContacts: []
@@ -676,6 +740,11 @@ export default function MembersPanel({
     form.resetFields();
     form.setFieldsValue({
       planId: undefined,
+      miscFeesEnabled: false,
+      miscFeeAmount: 0,
+      personalTrainerEnabled: false,
+      personalTrainerFeeAmount: 0,
+      discountAmount: 0,
       paidAmount: 0,
       paymentMethod: "cash" as const
     });
@@ -917,20 +986,33 @@ export default function MembersPanel({
   const onSubmit = async () => {
     try {
       if (newMembershipTarget) {
-        const membershipValues = await form.validateFields(["planId", "paidAmount", "paymentMethod"]);
+        const membershipValues = await form.validateFields([
+          "planId",
+          "miscFeesEnabled",
+          "miscFeeAmount",
+          "personalTrainerEnabled",
+          "personalTrainerFeeAmount",
+          "discountAmount",
+          "paidAmount",
+          "paymentMethod"
+        ]);
         if (!membershipValues.planId) {
           message.error("Select a membership plan.");
           return;
         }
         const selectedPlan = plans.find((plan) => plan._id === membershipValues.planId);
-        const selectedPlanCap = selectedPlan ? Number(selectedPlan.price ?? 0) : null;
-        const normalizedPaidAmountRaw = Number(membershipValues.paidAmount ?? 0);
-        const normalizedPaidAmount = Number.isFinite(normalizedPaidAmountRaw) ? normalizedPaidAmountRaw : 0;
-        const finalPaidAmount =
-          selectedPlanCap !== null ? Math.min(normalizedPaidAmount, selectedPlanCap) : normalizedPaidAmount;
-        if (selectedPlanCap !== null && normalizedPaidAmount > selectedPlanCap) {
-          form.setFieldValue("paidAmount", selectedPlanCap);
-          message.warning(PLAN_PRICE_CAP_MESSAGE);
+        const paymentSummary = calculateMembershipPaymentSummary({
+          planPrice: Number(selectedPlan?.price ?? 0),
+          miscFeesEnabled: Boolean(membershipValues.miscFeesEnabled),
+          miscFeeAmount: membershipValues.miscFeeAmount,
+          personalTrainerEnabled: Boolean(membershipValues.personalTrainerEnabled),
+          personalTrainerFeeAmount: membershipValues.personalTrainerFeeAmount,
+          discountAmount: membershipValues.discountAmount,
+          paidAmount: membershipValues.paidAmount
+        });
+        if (Number(membershipValues.paidAmount ?? 0) > paymentSummary.finalPayableAmount) {
+          form.setFieldValue("paidAmount", paymentSummary.finalPayableAmount);
+          message.warning(PAYMENT_CAP_MESSAGE);
         }
         setSubmitting(true);
         const subRes = await apiClient.post<SubscriptionCreateResponse>(
@@ -938,7 +1020,10 @@ export default function MembersPanel({
           {
             planId: membershipValues.planId,
             startDate: new Date().toISOString(),
-            paidAmount: finalPaidAmount,
+            miscFeeAmount: paymentSummary.miscFeeAmount,
+            personalTrainerFeeAmount: paymentSummary.personalTrainerFeeAmount,
+            discountAmount: paymentSummary.discountAmount,
+            paidAmount: paymentSummary.paidAmount,
             method: membershipValues.paymentMethod ?? "cash",
             transactionRef: null,
             autoRenew: false
@@ -1023,14 +1108,18 @@ export default function MembersPanel({
         return;
       }
       const selectedPlan = plans.find((plan) => plan._id === values.planId);
-      const selectedPlanCap = selectedPlan ? Number(selectedPlan.price ?? 0) : null;
-      const normalizedPaidAmountRaw = Number(values.paidAmount ?? 0);
-      const normalizedPaidAmount = Number.isFinite(normalizedPaidAmountRaw) ? normalizedPaidAmountRaw : 0;
-      const finalPaidAmount =
-        selectedPlanCap !== null ? Math.min(normalizedPaidAmount, selectedPlanCap) : normalizedPaidAmount;
-      if (selectedPlanCap !== null && normalizedPaidAmount > selectedPlanCap) {
-        form.setFieldValue("paidAmount", selectedPlanCap);
-        message.warning(PLAN_PRICE_CAP_MESSAGE);
+      const paymentSummary = calculateMembershipPaymentSummary({
+        planPrice: Number(selectedPlan?.price ?? 0),
+        miscFeesEnabled: Boolean(values.miscFeesEnabled),
+        miscFeeAmount: values.miscFeeAmount,
+        personalTrainerEnabled: Boolean(values.personalTrainerEnabled),
+        personalTrainerFeeAmount: values.personalTrainerFeeAmount,
+        discountAmount: values.discountAmount,
+        paidAmount: values.paidAmount
+      });
+      if (Number(values.paidAmount ?? 0) > paymentSummary.finalPayableAmount) {
+        form.setFieldValue("paidAmount", paymentSummary.finalPayableAmount);
+        message.warning(PAYMENT_CAP_MESSAGE);
       }
 
       const scopedBranchId = canManageBranches ? values.branchId : effectiveBranchId;
@@ -1082,7 +1171,10 @@ export default function MembersPanel({
         subscription: {
           planId: values.planId,
           startDate: values.dateOfJoining.toDate().toISOString(),
-          paidAmount: finalPaidAmount,
+          miscFeeAmount: paymentSummary.miscFeeAmount,
+          personalTrainerFeeAmount: paymentSummary.personalTrainerFeeAmount,
+          discountAmount: paymentSummary.discountAmount,
+          paidAmount: paymentSummary.paidAmount,
           method: values.paymentMethod,
           transactionRef: null,
           autoRenew: false
@@ -1124,7 +1216,10 @@ export default function MembersPanel({
           {
             planId: values.planId,
             startDate: values.dateOfJoining.toDate().toISOString(),
-            paidAmount: finalPaidAmount,
+            miscFeeAmount: paymentSummary.miscFeeAmount,
+            personalTrainerFeeAmount: paymentSummary.personalTrainerFeeAmount,
+            discountAmount: paymentSummary.discountAmount,
+            paidAmount: paymentSummary.paidAmount,
             method: values.paymentMethod,
             transactionRef: null,
             autoRenew: false
@@ -1861,59 +1956,147 @@ export default function MembersPanel({
             <>
               <Title level={5} style={sectionTitleStyle}>Plan &amp; payment</Title>
               <div style={sectionCardStyle}>
-                <Row gutter={16}>
-                  <Col xs={24} sm={12}>
-                    <Form.Item
-                      name="planId"
-                      label="Membership plan"
-                      rules={[{ required: true, message: "Select a plan" }]}
-                    >
-                      <Select
-                        showSearch
-                        optionFilterProp="label"
-                        placeholder={planOptions.length ? "Select plan" : "No active plans found"}
-                        options={planOptions}
-                        onOpenChange={(open) => {
-                          if (open) {
-                            reloadPlansForOpenDropdown();
-                          }
-                        }}
-                        notFoundContent={
-                          planOptions.length ? undefined : (
-                            <Button type="link" onClick={() => startCreateMembershipFromMemberModal()} style={{ padding: 0 }}>
-                              Add membership plan
-                            </Button>
-                          )
-                        }
-                      />
-                    </Form.Item>
+                <Row gutter={[16, 16]} align="top">
+                  <Col xs={24} lg={15}>
+                    <Row gutter={16}>
+                      <Col xs={24} sm={12}>
+                        <Form.Item
+                          name="planId"
+                          label="Membership plan"
+                          rules={[{ required: true, message: "Select a plan" }]}
+                        >
+                          <Select
+                            showSearch
+                            optionFilterProp="label"
+                            placeholder={planOptions.length ? "Select plan" : "No active plans found"}
+                            options={planOptions}
+                            onOpenChange={(open) => {
+                              if (open) {
+                                reloadPlansForOpenDropdown();
+                              }
+                            }}
+                            notFoundContent={
+                              planOptions.length ? undefined : (
+                                <Button type="link" onClick={() => startCreateMembershipFromMemberModal()} style={{ padding: 0 }}>
+                                  Add membership plan
+                                </Button>
+                              )
+                            }
+                          />
+                        </Form.Item>
+                      </Col>
+                      <Col xs={24} sm={12}>
+                        <Form.Item name="discountAmount" label="Discount amount">
+                          <InputNumber min={0} step={100} style={{ width: "100%" }} />
+                        </Form.Item>
+                      </Col>
+                    </Row>
+                    <Row gutter={16}>
+                      <Col xs={24} sm={12}>
+                        <Form.Item name="miscFeesEnabled" valuePropName="checked" style={{ marginBottom: 8 }}>
+                          <Checkbox>Misc fees</Checkbox>
+                        </Form.Item>
+                        <Form.Item name="miscFeeAmount" label="Misc fee amount">
+                          <InputNumber
+                            min={0}
+                            step={100}
+                            disabled={!watchedMiscFeesEnabled}
+                            style={{ width: "100%" }}
+                          />
+                        </Form.Item>
+                      </Col>
+                      <Col xs={24} sm={12}>
+                        <Form.Item
+                          key={`paidAmount-${String(watchedPlanId ?? "none")}`}
+                          name="paidAmount"
+                          label="Paid amount"
+                          initialValue={paymentPreview.finalPayableAmount}
+                          preserve={false}
+                        >
+                          <InputNumber
+                            min={0}
+                            max={paymentPreview.finalPayableAmount}
+                            step={100}
+                            style={{ width: "100%" }}
+                          />
+                        </Form.Item>
+                      </Col>
+                    </Row>
+                    <Row gutter={16}>
+                      <Col xs={24} sm={12}>
+                        <Form.Item name="personalTrainerEnabled" valuePropName="checked" style={{ marginBottom: 8 }}>
+                          <Checkbox>Personal trainer</Checkbox>
+                        </Form.Item>
+                        <Form.Item name="personalTrainerFeeAmount" label="Trainer fee amount">
+                          <InputNumber
+                            min={0}
+                            step={100}
+                            disabled={!watchedPersonalTrainerEnabled}
+                            style={{ width: "100%" }}
+                          />
+                        </Form.Item>
+                      </Col>
+                      <Col xs={24} sm={12}>
+                        <Form.Item name="paymentMethod" label="Payment method">
+                          <Select
+                            options={[
+                              { value: "cash", label: "Cash" },
+                              { value: "upi", label: "UPI" },
+                              { value: "card", label: "Card" }
+                            ]}
+                          />
+                        </Form.Item>
+                      </Col>
+                    </Row>
                   </Col>
-                  <Col xs={24} sm={12}>
-                    <Form.Item
-                      key={`paidAmount-${String(watchedPlanId ?? "none")}`}
-                      name="paidAmount"
-                      label="Paid amount"
-                      initialValue={selectedPlanPrice ?? 0}
-                      preserve={false}
+                  <Col xs={24} lg={9}>
+                    <div
+                      style={{
+                        border: `1px solid ${token.colorBorderSecondary}`,
+                        borderRadius: 10,
+                        padding: 12,
+                        background: token.colorBgContainer
+                      }}
                     >
-                      <InputNumber
-                        min={0}
-                        max={selectedPlanPrice ?? undefined}
-                        step={100}
-                        style={{ width: "100%" }}
-                      />
-                    </Form.Item>
+                      <Space direction="vertical" size={6} style={{ width: "100%" }}>
+                        <div style={paymentSummaryRowStyle}>
+                          <Text>Plan price</Text>
+                          <Text style={paymentSummaryValueStyle}>{formatInrWhole(paymentPreview.planAmount)}</Text>
+                        </div>
+                        <div style={paymentSummaryRowStyle}>
+                          <Text>Misc fees</Text>
+                          <Text style={paymentSummaryValueStyle}>{formatInrWhole(paymentPreview.miscFeeAmount)}</Text>
+                        </div>
+                        <div style={paymentSummaryRowStyle}>
+                          <Text>Trainer fees</Text>
+                          <Text style={paymentSummaryValueStyle}>{formatInrWhole(paymentPreview.personalTrainerFeeAmount)}</Text>
+                        </div>
+                        <div style={paymentSummaryRowStyle}>
+                          <Text>Subtotal</Text>
+                          <Text style={paymentSummaryValueStyle}>{formatInrWhole(paymentPreview.subtotalAmount)}</Text>
+                        </div>
+                        <div style={paymentSummaryRowStyle}>
+                          <Text>Discount</Text>
+                          <Text style={paymentSummaryValueStyle}>{formatInrWhole(paymentPreview.discountAmount)}</Text>
+                        </div>
+                        <div style={{ ...paymentSummaryRowStyle, borderTop: `1px solid ${token.colorBorderSecondary}`, paddingTop: 8 }}>
+                          <Text strong>Final payable</Text>
+                          <Text strong style={paymentSummaryValueStyle}>{formatInrWhole(paymentPreview.finalPayableAmount)}</Text>
+                        </div>
+                        <div style={paymentSummaryRowStyle}>
+                          <Text>Paid amount</Text>
+                          <Text style={paymentSummaryValueStyle}>{formatInrWhole(paymentPreview.paidAmount)}</Text>
+                        </div>
+                        <div style={paymentSummaryRowStyle}>
+                          <Text type={paymentPreview.remainingAmount > 0 ? "warning" : "success"}>Remaining</Text>
+                          <Text type={paymentPreview.remainingAmount > 0 ? "warning" : "success"} style={paymentSummaryValueStyle}>
+                            {formatInrWhole(paymentPreview.remainingAmount)}
+                          </Text>
+                        </div>
+                      </Space>
+                    </div>
                   </Col>
                 </Row>
-                <Form.Item name="paymentMethod" label="Payment method">
-                  <Select
-                    options={[
-                      { value: "cash", label: "Cash" },
-                      { value: "upi", label: "UPI" },
-                      { value: "card", label: "Card" }
-                    ]}
-                  />
-                </Form.Item>
               </div>
             </>
           )}
