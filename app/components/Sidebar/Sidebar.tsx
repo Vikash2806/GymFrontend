@@ -11,7 +11,6 @@ import {
   TeamOutlined,
   UserAddOutlined,
   UserOutlined,
-  FundOutlined,
   WalletOutlined,
   SwapOutlined
 } from "@ant-design/icons";
@@ -42,12 +41,6 @@ const mainMenuItems: MenuItem[] = [
   { key: "Branches", label: "Branches", icon: <BankOutlined />, route: "/pages/branches" },
   { key: "GymMembers", label: "Members", icon: <TeamOutlined />, route: "/pages/members" },
   { key: "Transactions", label: "Transactions", icon: <SwapOutlined />, route: "/pages/transactions" },
-  {
-    key: "Finance",
-    label: "Financial Overview",
-    icon: <FundOutlined />,
-    route: "/pages/finance"
-  },
   { key: "Expenses", label: "Expenses", icon: <WalletOutlined />, route: "/pages/expenses" },
   {
     key: "StaffManager",
@@ -135,9 +128,6 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
       }
       if (item.key === "Transactions") {
         return hasFeature(displaySession, FEATURES.BILLING_DASHBOARD);
-      }
-      if (item.key === "Finance") {
-        return hasFeature(displaySession, FEATURES.FINANCIAL_OVERVIEW);
       }
       if (item.key === "RbacAdmin") {
         return hasFeature(displaySession, FEATURES.RBAC_SETTINGS);

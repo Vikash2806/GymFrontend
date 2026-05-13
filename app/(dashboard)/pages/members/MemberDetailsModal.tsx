@@ -5,6 +5,7 @@ import { Avatar, Button, Descriptions, Divider, Modal, Pagination, Space, Table,
 import dayjs from "dayjs";
 import { WIDE_MODAL_WIDTH } from "@/utils/modalWidths";
 import { formatInrWhole } from "@/utils/formatCurrency";
+import { stripPlanNamePriceSuffix } from "@/utils/planDisplayName";
 import type { Member } from "@/types/member";
 import apiClient from "@/utils/api";
 import type { ColumnsType } from "antd/es/table";
@@ -15,6 +16,8 @@ const { Title, Text } = Typography;
 type SubscriptionHistoryItem = {
   _id: string;
   planName: string;
+  /** Catalog list price from plan snapshot when the subscription was created. */
+  planListPrice?: number;
   status: "active" | "expired" | "cancelled" | "paused";
   startDate: string;
   endDate: string;
@@ -93,15 +96,25 @@ function ageFromDob(iso: string | null): string {
 
 export default function MemberDetailsModal({ open, member, onClose }: MemberDetailsModalProps) {
   const { token } = theme.useToken();
-  const currentPayment = member?.currentSubscription?.payment
-    ? calculateMembershipPaymentSummary({
-        planPrice: member.currentSubscription.payment.planAmount ?? member.currentSubscription.payment.totalAmount ?? 0,
-        miscFeeAmount: member.currentSubscription.payment.miscFeeAmount,
-        personalTrainerFeeAmount: member.currentSubscription.payment.personalTrainerFeeAmount,
-        discountAmount: member.currentSubscription.payment.discountAmount,
-        paidAmount: member.currentSubscription.payment.paidAmount
-      })
-    : null;
+  const currentPayment = useMemo(() => {
+    if (!member?.currentSubscription?.payment) {
+      return null;
+    }
+    const p = member.currentSubscription.payment;
+    const listLine = member.currentSubscription.pricing?.listPrice;
+    const planPrice = Math.max(
+      Number(p.planAmount ?? 0),
+      Number(p.totalAmount ?? 0),
+      Number(listLine ?? 0)
+    );
+    return calculateMembershipPaymentSummary({
+      planPrice,
+      miscFeeAmount: p.miscFeeAmount,
+      personalTrainerFeeAmount: p.personalTrainerFeeAmount,
+      discountAmount: p.discountAmount,
+      paidAmount: p.paidAmount ?? 0
+    });
+  }, [member]);
   const [activeTab, setActiveTab] = useState<"details" | "history" | "transactions">("details");
   const [historyPage, setHistoryPage] = useState(1);
   const historyPageSize = 5;
@@ -146,7 +159,21 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
 
   const historyColumns: ColumnsType<SubscriptionHistoryItem> = useMemo(
     () => [
-      { title: "Plan", key: "planName", dataIndex: "planName", render: (value: string) => value || "—" },
+      {
+        title: "Plan",
+        key: "planName",
+        dataIndex: "planName",
+        render: (_: string, row) => (
+          <Space direction="vertical" size={0}>
+            <Text>{stripPlanNamePriceSuffix(row.planName) || "—"}</Text>
+            {row.planListPrice != null && row.planListPrice > 0 ? (
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                List {formatInrWhole(row.planListPrice)}
+              </Text>
+            ) : null}
+          </Space>
+        )
+      },
       { title: "Start Date", key: "startDate", dataIndex: "startDate", render: (value: string) => formatDisplayDate(value) },
       { title: "End Date", key: "endDate", dataIndex: "endDate", render: (value: string) => formatDisplayDate(value) },
       { title: "Paid", key: "paidAmount", align: "right", render: (_, row) => formatInrWhole(row.paymentSummary?.paidAmount ?? 0) },
@@ -300,7 +327,12 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
                     <Text strong>Membership</Text>
                     <Descriptions column={1} size="small" bordered style={{ marginTop: 8 }}>
                       <Descriptions.Item label="Lifetime Total Paid (₹)">{formatInrWhole(member.financialSummary?.lifetime?.totalPaid ?? 0)}</Descriptions.Item>
-                      <Descriptions.Item label="Membership Type">{member.currentSubscription?.planName ?? "—"}</Descriptions.Item>
+                      <Descriptions.Item label="Total Pending (all memberships) (₹)">
+                        <Text type={member.financialSummary?.lifetime?.totalPending ? "danger" : undefined}>
+                          {formatInrWhole(member.financialSummary?.lifetime?.totalPending ?? 0)}
+                        </Text>
+                      </Descriptions.Item>
+                      <Descriptions.Item label="Membership Type">{stripPlanNamePriceSuffix(member.currentSubscription?.planName) || "—"}</Descriptions.Item>
                       <Descriptions.Item label="Plan Amount (₹)">{currentPayment ? formatInrWhole(currentPayment.planAmount) : "—"}</Descriptions.Item>
                       <Descriptions.Item label="Misc Fees (₹)">{currentPayment ? formatInrWhole(currentPayment.miscFeeAmount) : "—"}</Descriptions.Item>
                       <Descriptions.Item label="Trainer Fees (₹)">{currentPayment ? formatInrWhole(currentPayment.personalTrainerFeeAmount) : "—"}</Descriptions.Item>

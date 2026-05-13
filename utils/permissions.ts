@@ -107,7 +107,6 @@ const FEATURE_ROUTE_ORDER: Array<{ feature: FeatureKey; route: string }> = [
   { feature: FEATURES.MEMBER_MANAGEMENT, route: "/pages/members" },
   { feature: FEATURES.DASHBOARD, route: "/pages/dashboard" },
   { feature: FEATURES.BILLING_DASHBOARD, route: "/pages/members" },
-  { feature: FEATURES.FINANCIAL_OVERVIEW, route: "/pages/finance" },
   { feature: FEATURES.EXPENSES, route: "/pages/expenses" },
   { feature: FEATURES.BRANCH_MANAGEMENT, route: "/pages/branches" },
   { feature: FEATURES.STAFF_MANAGEMENT, route: "/pages/staff-manager" },
@@ -125,14 +124,13 @@ export function getFirstAccessibleRoute(session: SessionPayload | null): string 
   return "/pages/settings";
 }
 
-type SidebarModule = "members" | "plans" | "subscriptions" | "payments" | "finance" | "expenses" | "branches" | "staff" | "settings";
+type SidebarModule = "members" | "plans" | "subscriptions" | "payments" | "expenses" | "branches" | "staff" | "settings";
 
 const MODULE_TO_FEATURE: Record<SidebarModule, FeatureKey> = {
   members: FEATURES.MEMBER_MANAGEMENT,
   plans: FEATURES.MEMBERSHIP_PLANS,
   subscriptions: FEATURES.SUBSCRIPTION_MANAGEMENT,
   payments: FEATURES.BILLING_DASHBOARD,
-  finance: FEATURES.FINANCIAL_OVERVIEW,
   expenses: FEATURES.EXPENSES,
   branches: FEATURES.BRANCH_MANAGEMENT,
   staff: FEATURES.STAFF_MANAGEMENT,

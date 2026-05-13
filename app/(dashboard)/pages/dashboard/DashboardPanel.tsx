@@ -22,7 +22,6 @@ import type { ColumnsType } from "antd/es/table";
 import {
   ArrowRightOutlined,
   ClockCircleOutlined,
-  FundOutlined,
   RiseOutlined,
   TeamOutlined,
   WalletOutlined
@@ -41,7 +40,7 @@ import type { Member } from "@/types/member";
 import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
 
-const RevenueTrendChart = dynamic(() => import("../finance/RevenueTrendChart"), {
+const RevenueTrendChart = dynamic(() => import("./RevenueTrendChart"), {
   ssr: false,
   loading: () => (
     <div style={{ height: 220, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -626,7 +625,7 @@ export default function DashboardPanel() {
               </Space>
             }
             extra={
-              <Link href="/pages/members">
+              <Link href="/pages/members?filter=overdue">
                 <Button type="link" icon={<WalletOutlined />}>
                   Members <ArrowRightOutlined />
                 </Button>
@@ -677,13 +676,6 @@ export default function DashboardPanel() {
                 </Title>
                 <Text type="secondary">(first {TOP_N})</Text>
               </Space>
-            }
-            extra={
-              <Link href="/pages/finance">
-                <Button type="link" icon={<FundOutlined />}>
-                  Financial overview <ArrowRightOutlined />
-                </Button>
-              </Link>
             }
           >
             {paymentsPreview.length > 0 ? (

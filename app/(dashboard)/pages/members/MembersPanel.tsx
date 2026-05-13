@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Alert,
   App,
@@ -29,7 +30,6 @@ import type { TableProps } from "antd";
 import type { UploadFile } from "antd/es/upload/interface";
 import {
   CloseCircleOutlined,
-  ClockCircleOutlined,
   DeleteOutlined,
   EllipsisOutlined,
   EditOutlined,
@@ -49,6 +49,7 @@ import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
 import { stripToIndianMobileDigits } from "@/utils/mobileValidation";
 import { formatInrWhole } from "@/utils/formatCurrency";
+import { stripPlanNamePriceSuffix } from "@/utils/planDisplayName";
 import { FEATURES, hasFeature } from "@/utils/permissions";
 import { getCityOptions, getCountryOptions, getStateOptions } from "@/utils/options";
 import { calculateMembershipPaymentSummary } from "@/utils/membershipPaymentSummary";
@@ -169,9 +170,9 @@ type MemberTableColumnKey =
   | "age"
   | "plan"
   | "totalPending"
-  | "paymentStatus"
-  | "billing"
   | "actions";
+
+type MemberListFilter = "all" | "active" | "inactive" | "overdue";
 
 function ageFromDob(iso: string | null): string {
   if (!iso) {
@@ -199,48 +200,6 @@ function displayMemberAge(m: Member): string {
     return String(y);
   }
   return "—";
-}
-
-function memberLevelPaymentStatusCell(m: Member) {
-  const pending = m.financialSummary?.lifetime?.totalPending ?? 0;
-  const paid = m.financialSummary?.lifetime?.totalPaid ?? 0;
-  if (pending <= 0) {
-    return <Tag color="success">PAID</Tag>;
-  }
-  if (paid <= 0) {
-    return <Tag color="warning">PENDING</Tag>;
-  }
-  return <Tag color="processing">PARTIAL</Tag>;
-}
-
-function billingCell(m: Member, token: { colorWarning: string }) {
-  const p = m.currentSubscription?.payment;
-  if (!p) {
-    return <Text type="secondary">—</Text>;
-  }
-  const sub = m.currentSubscription;
-  const endLabel = sub ? formatDisplayDate(sub.endDate) : "—";
-  if (p.status === "paid") {
-    return (
-      <Space direction="vertical" size={0}>
-        <Text>Paid</Text>
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          {endLabel}
-        </Text>
-      </Space>
-    );
-  }
-  return (
-    <Space direction="vertical" size={0}>
-      <Space size={4}>
-        <ClockCircleOutlined style={{ color: token.colorWarning }} />
-        <Text>{formatInrWhole(p.remainingAmount ?? p.pendingAmount ?? 0)}</Text>
-      </Space>
-      <Text type="secondary" style={{ fontSize: 12 }}>
-        {endLabel}
-      </Text>
-    </Space>
-  );
 }
 
 type FormShape = {
@@ -304,6 +263,9 @@ export default function MembersPanel({
   onMemberDraftHandled,
   onCreatedPlanHandled
 }: MembersPanelProps) {
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
   const { message, modal } = App.useApp();
   const { token } = theme.useToken();
   const session = useAppSelector(selectSession);
@@ -320,7 +282,9 @@ export default function MembersPanel({
   const [loading, setLoading] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
   const [plans, setPlans] = useState<MembershipPlan[]>([]);
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
+  const [memberListFilter, setMemberListFilter] = useState<MemberListFilter>(() =>
+    searchParams.get("filter") === "overdue" ? "overdue" : "all"
+  );
   const [nameSearch, setNameSearch] = useState("");
   const [debouncedNameSearch, setDebouncedNameSearch] = useState("");
   const [membersPage, setMembersPage] = useState(1);
@@ -355,11 +319,10 @@ export default function MembersPanel({
     "age",
     "plan",
     "totalPending",
-    "paymentStatus",
-    "billing",
     "actions"
   ]);
   const planRequestSeq = useRef(0);
+  const skipNextUrlDrivenFilterSyncRef = useRef(false);
   const [form] = Form.useForm<FormShape>();
   const watchedPhone = Form.useWatch("phone", form);
   const watchedBranchId = Form.useWatch("branchId", form);
@@ -414,8 +377,10 @@ export default function MembersPanel({
     setLoading(true);
     try {
       const params: Record<string, string> = { branchId: effectiveBranchId };
-      if (statusFilter !== "all") {
-        params.status = statusFilter;
+      if (memberListFilter === "overdue") {
+        params.pendingPayment = "true";
+      } else if (memberListFilter !== "all") {
+        params.status = memberListFilter;
       }
       params.page = String(membersPage);
       params.pageSize = String(membersPageSize);
@@ -448,7 +413,7 @@ export default function MembersPanel({
     } finally {
       setLoading(false);
     }
-  }, [effectiveBranchId, statusFilter, membersPage, membersPageSize, debouncedNameSearch, onMemberCountChange, message]);
+  }, [effectiveBranchId, memberListFilter, membersPage, membersPageSize, debouncedNameSearch, onMemberCountChange, message]);
 
   const loadMemberUsage = useCallback(async () => {
     if (!effectiveBranchId) {
@@ -548,7 +513,40 @@ export default function MembersPanel({
 
   useEffect(() => {
     setMembersPage(1);
-  }, [effectiveBranchId, statusFilter, debouncedNameSearch]);
+  }, [effectiveBranchId, memberListFilter, debouncedNameSearch]);
+
+  useLayoutEffect(() => {
+    if (skipNextUrlDrivenFilterSyncRef.current) {
+      skipNextUrlDrivenFilterSyncRef.current = false;
+      return;
+    }
+    if (searchParams.get("filter") === "overdue") {
+      setMemberListFilter("overdue");
+    }
+  }, [searchParams]);
+
+  const syncMemberListFilterToUrl = useCallback(
+    (next: MemberListFilter) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (next === "overdue") {
+        params.set("filter", "overdue");
+      } else {
+        params.delete("filter");
+      }
+      const q = params.toString();
+      router.replace(q ? `${pathname}?${q}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams]
+  );
+
+  const onMemberListFilterChange = useCallback(
+    (next: MemberListFilter) => {
+      skipNextUrlDrivenFilterSyncRef.current = true;
+      setMemberListFilter(next);
+      syncMemberListFilterToUrl(next);
+    },
+    [syncMemberListFilterToUrl]
+  );
 
   const branchOptions = useMemo(() => {
     const br = session?.gym?.branches ?? [];
@@ -964,7 +962,10 @@ export default function MembersPanel({
 
   const getRowActionItems = useCallback(
     (record: Member) => {
+      const menuItemStyle: React.CSSProperties = { fontSize: 15, lineHeight: 1.35, minHeight: 40, paddingBlock: 10 };
       const totalPending = record.financialSummary?.lifetime?.totalPending ?? 0;
+      const newMembershipDisabled =
+        !canCreateMember || record.currentSubscription?.status === "active";
       const overdueItem =
         canRecordBillingPayment && totalPending > 0
           ? [
@@ -972,6 +973,7 @@ export default function MembersPanel({
                 key: "overdue",
                 label: "Add overdue payment",
                 icon: <WalletOutlined />,
+                style: menuItemStyle,
                 onClick: () => {
                   setOverduePayMember(record);
                 }
@@ -980,18 +982,42 @@ export default function MembersPanel({
           : [];
       return [
         {
+          key: "newMembership",
+          label: "New membership",
+          icon: <PlusOutlined />,
+          style: menuItemStyle,
+          disabled: newMembershipDisabled,
+          onClick: () => {
+            if (!newMembershipDisabled) {
+              openNewMembership(record);
+            }
+          }
+        },
+        {
           key: "view",
           label: "View Details",
           icon: <EyeOutlined />,
+          style: menuItemStyle,
           onClick: () => {
             void openView(record);
           }
         },
         ...overdueItem,
         {
+          key: "edit",
+          label: "Edit",
+          icon: <EditOutlined />,
+          style: menuItemStyle,
+          disabled: !canUpdateMember,
+          onClick: () => {
+            void openEdit(record);
+          }
+        },
+        {
           key: "cancel",
           label: "Cancel Membership",
           icon: <CloseCircleOutlined />,
+          style: menuItemStyle,
           danger: true,
           disabled: !record.currentSubscription,
           onClick: () => {
@@ -999,18 +1025,10 @@ export default function MembersPanel({
           }
         },
         {
-          key: "edit",
-          label: "Edit",
-          icon: <EditOutlined />,
-          disabled: !canUpdateMember,
-          onClick: () => {
-            void openEdit(record);
-          }
-        },
-        {
           key: "delete",
           label: "Delete",
           icon: <DeleteOutlined />,
+          style: menuItemStyle,
           danger: true,
           disabled: !canDeleteMember,
           onClick: () => {
@@ -1026,7 +1044,7 @@ export default function MembersPanel({
         }
       ];
     },
-    [canRecordBillingPayment, canUpdateMember, canDeleteMember, modal, openView, openEdit, handleDelete]
+    [canCreateMember, canRecordBillingPayment, canUpdateMember, canDeleteMember, modal, openView, openNewMembership, openEdit, handleDelete]
   );
 
   const onSubmit = async () => {
@@ -1383,7 +1401,7 @@ export default function MembersPanel({
           }
           return (
             <Space direction="vertical" size={0}>
-              <Text>{sub.planName}</Text>
+              <Text>{stripPlanNamePriceSuffix(sub.planName)}</Text>
               <Text type="secondary" style={{ fontSize: 12 }}>
                 {formatDisplayDate(sub.endDate)}
               </Text>
@@ -1392,56 +1410,57 @@ export default function MembersPanel({
         }
       },
       {
-        title: "Total pending",
+        title: "Overdue payments",
         key: "totalPending",
-        width: 120,
+        width: 140,
         align: "right" as const,
         render: (_, record) => {
           const v = record.financialSummary?.lifetime?.totalPending ?? 0;
           if (v <= 0) {
             return <Text type="secondary">—</Text>;
           }
-          return <Text type="warning">{formatInrWhole(v)}</Text>;
+          return (
+            <Text type="danger" strong>
+              {formatInrWhole(v)}
+            </Text>
+          );
         }
-      },
-      {
-        title: "Billing",
-        key: "billing",
-        width: 140,
-        render: (_, record) => billingCell(record, token)
-      },
-      {
-        title: "Payment Status",
-        key: "paymentStatus",
-        width: 130,
-        render: (_, record) => memberLevelPaymentStatusCell(record)
       },
       {
         title: "Actions",
         key: "actions",
-        width: 170,
+        width: 88,
+        align: "center" as const,
         fixed: "right",
         render: (_, record) => (
-          <Space size={4} wrap>
-            <Tooltip title="New Membership">
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              width: "100%",
+              minHeight: 40
+            }}
+          >
+            <Dropdown
+              menu={{
+                items: getRowActionItems(record),
+                style: { minWidth: 240, padding: "8px 0" }
+              }}
+              trigger={["click"]}
+              placement="bottomRight"
+            >
               <Button
-                type="link"
-                icon={<PlusOutlined />}
-                onClick={() => openNewMembership(record)}
-                aria-label="New membership"
-                disabled={!canCreateMember || record.currentSubscription?.status === "active"}
-                style={{ color: token.colorSuccess }}
-              >
-                New Membership
-              </Button>
-            </Tooltip>
-            <Dropdown menu={{ items: getRowActionItems(record) }} trigger={["click"]} placement="bottomRight">
-              <Button type="text" icon={<EllipsisOutlined />} aria-label="More actions" />
+                type="text"
+                size="large"
+                icon={<EllipsisOutlined style={{ fontSize: 18 }} />}
+                aria-label="More actions"
+              />
             </Dropdown>
-          </Space>
+          </div>
         )
       }
-    ], [token, canCreateMember, openView, openNewMembership, getRowActionItems]);
+    ], [token, openView, getRowActionItems]);
 
   const visibleColumns = useMemo(
     () =>
@@ -1459,9 +1478,7 @@ export default function MembersPanel({
       { label: "Mobile Number", value: "phone" },
       { label: "Age", value: "age" },
       { label: "Membership", value: "plan" },
-      { label: "Total pending", value: "totalPending" },
-      { label: "Payment Status", value: "paymentStatus" },
-      { label: "Billing", value: "billing" },
+      { label: "Overdue payments", value: "totalPending" },
       { label: "Actions", value: "actions" }
     ],
     []
@@ -1490,14 +1507,15 @@ export default function MembersPanel({
             placeholder="Search name or mobile"
             style={{ width: 220 }}
           />
-          <Select
-            style={{ minWidth: 160 }}
-            value={statusFilter}
-            onChange={(v) => setStatusFilter(v)}
+          <Select<MemberListFilter>
+            style={{ minWidth: 200 }}
+            value={memberListFilter}
+            onChange={(v) => onMemberListFilterChange(v)}
             options={[
               { value: "all", label: "All members" },
               { value: "active", label: "Active" },
-              { value: "inactive", label: "Inactive" }
+              { value: "inactive", label: "Inactive" },
+              { value: "overdue", label: "Overdue payments" }
             ]}
           />
           <Dropdown
@@ -1538,7 +1556,11 @@ export default function MembersPanel({
             endpoint="/gym/exports/members"
             params={{
               branchId: effectiveBranchId || undefined,
-              status: statusFilter !== "all" ? statusFilter : undefined,
+              ...(memberListFilter === "overdue"
+                ? { pendingPayment: "true" }
+                : memberListFilter !== "all"
+                  ? { status: memberListFilter }
+                  : {}),
               search: nameSearch.trim() || undefined
             }}
             defaultFilename="members.csv"
@@ -1581,7 +1603,7 @@ export default function MembersPanel({
           },
           showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} members`
         }}
-        scroll={{ x: 1100, y: "calc(100vh - 120px)" }}
+        scroll={{ x: 960, y: "calc(100vh - 120px)" }}
         tableLayout="fixed"
         locale={{ emptyText: "No Data Found" }}
       />
