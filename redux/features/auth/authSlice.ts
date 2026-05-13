@@ -35,13 +35,15 @@ type AuthState = {
 };
 
 const AUTH_COOKIE_NAME = "gym_access_token";
+/** Align with backend JWT + HttpOnly cookie (`authController` ~7d). Session-only cookies expire unpredictably and break `middleware` auth checks on full reloads. */
+const AUTH_COOKIE_MAX_AGE_SEC = 7 * 24 * 60 * 60;
 
 function persistAuthCookie(token: string): void {
   if (typeof document === "undefined" || !token) {
     return;
   }
   const secureAttr = window.location.protocol === "https:" ? "; Secure" : "";
-  document.cookie = `${AUTH_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; SameSite=Lax${secureAttr}`;
+  document.cookie = `${AUTH_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; Max-Age=${AUTH_COOKIE_MAX_AGE_SEC}; SameSite=Lax${secureAttr}`;
 }
 
 function clearAuthCookie(): void {
