@@ -37,7 +37,8 @@ import {
   HomeOutlined,
   InboxOutlined,
   PhoneOutlined,
-  PlusOutlined
+  PlusOutlined,
+  WalletOutlined
 } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
 import apiClient from "@/utils/api";
@@ -52,6 +53,7 @@ import { FEATURES, hasFeature } from "@/utils/permissions";
 import { getCityOptions, getCountryOptions, getStateOptions } from "@/utils/options";
 import { calculateMembershipPaymentSummary } from "@/utils/membershipPaymentSummary";
 import ExportButton from "@/app/components/Export/ExportButton";
+import OverduePaymentModal from "@/app/components/payments/OverduePaymentModal";
 import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
 import MemberDetailsModal from "./MemberDetailsModal";
 
@@ -160,7 +162,16 @@ type ImportMembersResponse = {
   failedCount?: number;
   failures?: Array<{ row: number; message: string }>;
 };
-type MemberTableColumnKey = "member" | "status" | "phone" | "age" | "plan" | "paymentStatus" | "billing" | "actions";
+type MemberTableColumnKey =
+  | "member"
+  | "status"
+  | "phone"
+  | "age"
+  | "plan"
+  | "totalPending"
+  | "paymentStatus"
+  | "billing"
+  | "actions";
 
 function ageFromDob(iso: string | null): string {
   if (!iso) {
@@ -188,6 +199,18 @@ function displayMemberAge(m: Member): string {
     return String(y);
   }
   return "—";
+}
+
+function memberLevelPaymentStatusCell(m: Member) {
+  const pending = m.financialSummary?.lifetime?.totalPending ?? 0;
+  const paid = m.financialSummary?.lifetime?.totalPaid ?? 0;
+  if (pending <= 0) {
+    return <Tag color="success">PAID</Tag>;
+  }
+  if (paid <= 0) {
+    return <Tag color="warning">PENDING</Tag>;
+  }
+  return <Tag color="processing">PARTIAL</Tag>;
 }
 
 function billingCell(m: Member, token: { colorWarning: string }) {
@@ -288,6 +311,7 @@ export default function MembersPanel({
   const canCreateMember = hasFeature(session, FEATURES.MEMBER_MANAGEMENT);
   const canUpdateMember = hasFeature(session, FEATURES.MEMBER_MANAGEMENT);
   const canDeleteMember = hasFeature(session, FEATURES.MEMBER_MANAGEMENT);
+  const canRecordBillingPayment = hasFeature(session, FEATURES.BILLING_DASHBOARD);
   const assignedBranchId = session?.user?.defaults?.branchId ?? "";
   const defaultBranchId = canManageBranches
     ? session?.activeBranch?.id ?? assignedBranchId
@@ -307,6 +331,7 @@ export default function MembersPanel({
   const [modalOpen, setModalOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailMember, setDetailMember] = useState<Member | null>(null);
+  const [overduePayMember, setOverduePayMember] = useState<Member | null>(null);
   const [editing, setEditing] = useState<Member | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [modalDirty, setModalDirty] = useState(false);
@@ -329,6 +354,7 @@ export default function MembersPanel({
     "phone",
     "age",
     "plan",
+    "totalPending",
     "paymentStatus",
     "billing",
     "actions"
@@ -936,52 +962,72 @@ export default function MembersPanel({
     }
   }, [importFileList, effectiveBranchId, message, loadMembers]);
 
-  const getRowActionItems = useCallback((record: Member) => [
-    {
-      key: "view",
-      label: "View Details",
-      icon: <EyeOutlined />,
-      onClick: () => {
-        void openView(record);
-      }
-    },
-    {
-      key: "cancel",
-      label: "Cancel Membership",
-      icon: <CloseCircleOutlined />,
-      danger: true,
-      disabled: !record.currentSubscription,
-      onClick: () => {
-        openCancelMembershipModal(record);
-      }
-    },
-    {
-      key: "edit",
-      label: "Edit",
-      icon: <EditOutlined />,
-      disabled: !canUpdateMember,
-      onClick: () => {
-        void openEdit(record);
-      }
-    },
-    {
-      key: "delete",
-      label: "Delete",
-      icon: <DeleteOutlined />,
-      danger: true,
-      disabled: !canDeleteMember,
-      onClick: () => {
-        modal.confirm({
-          title: "Delete this member?",
-          okText: "Delete",
-          okButtonProps: { danger: true },
-          onOk: async () => {
-            await handleDelete(record);
+  const getRowActionItems = useCallback(
+    (record: Member) => {
+      const totalPending = record.financialSummary?.lifetime?.totalPending ?? 0;
+      const overdueItem =
+        canRecordBillingPayment && totalPending > 0
+          ? [
+              {
+                key: "overdue",
+                label: "Add overdue payment",
+                icon: <WalletOutlined />,
+                onClick: () => {
+                  setOverduePayMember(record);
+                }
+              }
+            ]
+          : [];
+      return [
+        {
+          key: "view",
+          label: "View Details",
+          icon: <EyeOutlined />,
+          onClick: () => {
+            void openView(record);
           }
-        });
-      }
-    }
-  ], [canUpdateMember, canDeleteMember, modal, openView, openEdit, handleDelete]);
+        },
+        ...overdueItem,
+        {
+          key: "cancel",
+          label: "Cancel Membership",
+          icon: <CloseCircleOutlined />,
+          danger: true,
+          disabled: !record.currentSubscription,
+          onClick: () => {
+            openCancelMembershipModal(record);
+          }
+        },
+        {
+          key: "edit",
+          label: "Edit",
+          icon: <EditOutlined />,
+          disabled: !canUpdateMember,
+          onClick: () => {
+            void openEdit(record);
+          }
+        },
+        {
+          key: "delete",
+          label: "Delete",
+          icon: <DeleteOutlined />,
+          danger: true,
+          disabled: !canDeleteMember,
+          onClick: () => {
+            modal.confirm({
+              title: "Delete this member?",
+              okText: "Delete",
+              okButtonProps: { danger: true },
+              onOk: async () => {
+                await handleDelete(record);
+              }
+            });
+          }
+        }
+      ];
+    },
+    [canRecordBillingPayment, canUpdateMember, canDeleteMember, modal, openView, openEdit, handleDelete]
+  );
 
   const onSubmit = async () => {
     try {
@@ -1346,6 +1392,19 @@ export default function MembersPanel({
         }
       },
       {
+        title: "Total pending",
+        key: "totalPending",
+        width: 120,
+        align: "right" as const,
+        render: (_, record) => {
+          const v = record.financialSummary?.lifetime?.totalPending ?? 0;
+          if (v <= 0) {
+            return <Text type="secondary">—</Text>;
+          }
+          return <Text type="warning">{formatInrWhole(v)}</Text>;
+        }
+      },
+      {
         title: "Billing",
         key: "billing",
         width: 140,
@@ -1355,19 +1414,7 @@ export default function MembersPanel({
         title: "Payment Status",
         key: "paymentStatus",
         width: 130,
-        render: (_, record) => {
-          const paymentStatus = record.currentSubscription?.payment?.status;
-          if (!paymentStatus) {
-            return "—";
-          }
-          if (paymentStatus === "paid") {
-            return <Tag color="success">PAID</Tag>;
-          }
-          if (paymentStatus === "partial") {
-            return <Tag color="processing">PARTIALLY PAID</Tag>;
-          }
-          return <Tag color="warning">PENDING</Tag>;
-        }
+        render: (_, record) => memberLevelPaymentStatusCell(record)
       },
       {
         title: "Actions",
@@ -1412,6 +1459,7 @@ export default function MembersPanel({
       { label: "Mobile Number", value: "phone" },
       { label: "Age", value: "age" },
       { label: "Membership", value: "plan" },
+      { label: "Total pending", value: "totalPending" },
       { label: "Payment Status", value: "paymentStatus" },
       { label: "Billing", value: "billing" },
       { label: "Actions", value: "actions" }
@@ -2172,6 +2220,18 @@ export default function MembersPanel({
           )}
         </Form>
       </Modal>
+
+      {overduePayMember ? (
+        <OverduePaymentModal
+          key={overduePayMember._id}
+          open
+          onClose={() => setOverduePayMember(null)}
+          memberId={overduePayMember._id}
+          memberDisplayName={`${overduePayMember.firstName} ${overduePayMember.lastName}`.trim()}
+          totalPending={overduePayMember.financialSummary?.lifetime?.totalPending ?? 0}
+          onSuccess={() => loadMembers()}
+        />
+      ) : null}
     </div>
   );
 }

@@ -106,7 +106,7 @@ export const hasPermission = hasFeature;
 const FEATURE_ROUTE_ORDER: Array<{ feature: FeatureKey; route: string }> = [
   { feature: FEATURES.MEMBER_MANAGEMENT, route: "/pages/members" },
   { feature: FEATURES.DASHBOARD, route: "/pages/dashboard" },
-  { feature: FEATURES.BILLING_DASHBOARD, route: "/pages/billing" },
+  { feature: FEATURES.BILLING_DASHBOARD, route: "/pages/members" },
   { feature: FEATURES.FINANCIAL_OVERVIEW, route: "/pages/finance" },
   { feature: FEATURES.EXPENSES, route: "/pages/expenses" },
   { feature: FEATURES.BRANCH_MANAGEMENT, route: "/pages/branches" },

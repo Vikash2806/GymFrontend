@@ -21,6 +21,7 @@ type TransactionRow = {
   amount: number;
   method: "cash" | "upi" | "card";
   status: "success" | "refunded";
+  transactionType?: string;
   transactionRef: string | null;
   paidAt: string;
   createdAt: string;
@@ -73,6 +74,14 @@ const EMPTY_INSIGHTS: TransactionInsights = {
 function formatDateTime(iso: string): string {
   const d = dayjs(iso);
   return d.isValid() ? d.format("DD-MM-YYYY HH:mm") : "—";
+}
+
+function renderTransactionTypeTag(type: string | undefined) {
+  const t = type ?? "membership_payment";
+  if (t === "overdue_payment") {
+    return <Tag color="purple">OVERDUE</Tag>;
+  }
+  return <Tag color="blue">MEMBERSHIP</Tag>;
 }
 
 function renderStatusTag(status: TransactionRow["status"]) {
@@ -275,6 +284,12 @@ export default function TransactionsPanel() {
         )
       },
       { title: "Plan", key: "plan", width: 150, ellipsis: true, render: (_, row) => row.planName || "—" },
+      {
+        title: "Type",
+        key: "transactionType",
+        width: 120,
+        render: (_, row) => renderTransactionTypeTag(row.transactionType)
+      },
       { title: "Method", dataIndex: "method", key: "method", width: 90, render: (value: string) => value.toUpperCase() },
       { title: "Status", dataIndex: "status", key: "status", width: 120, render: (value: TransactionRow["status"]) => renderStatusTag(value) },
       { title: "Amount", dataIndex: "amount", key: "amount", width: 130, align: "right", render: (value: number) => formatInr(value) },

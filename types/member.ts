@@ -61,7 +61,7 @@ export type Member = {
   };
   flags: { hasActiveSubscription: boolean; hasPendingPayment: boolean };
   paymentStatus: {
-    status: "paid" | "partially_paid" | null;
+    status: "paid" | "partial" | "pending" | "partially_paid" | null;
     updatedAt: string;
   } | null;
   notes: string;

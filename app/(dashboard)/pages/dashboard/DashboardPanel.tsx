@@ -626,9 +626,9 @@ export default function DashboardPanel() {
               </Space>
             }
             extra={
-              <Link href="/pages/billing">
+              <Link href="/pages/members">
                 <Button type="link" icon={<WalletOutlined />}>
-                  Billing <ArrowRightOutlined />
+                  Members <ArrowRightOutlined />
                 </Button>
               </Link>
             }
