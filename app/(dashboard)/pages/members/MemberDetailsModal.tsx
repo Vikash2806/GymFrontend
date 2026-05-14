@@ -315,16 +315,6 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
                       {member.profile.weightKg != null && Number.isFinite(member.profile.weightKg) ? <Descriptions.Item label="Weight (kg)">{member.profile.weightKg}</Descriptions.Item> : null}
                     </Descriptions>
                     <Divider orientationMargin={8} />
-                    <Text strong>Payment summary (₹)</Text>
-                    <Descriptions column={1} size="small" bordered style={{ marginTop: 8 }} {...alignedDescriptionsSharedProps}>
-                      <Descriptions.Item label="Lifetime Total Paid (₹)">{formatInrWhole(member.financialSummary?.lifetime?.totalPaid ?? 0)}</Descriptions.Item>
-                      <Descriptions.Item label="Total Pending (all memberships) (₹)">
-                        <Text type={member.financialSummary?.lifetime?.totalPending ? "danger" : undefined}>
-                          {formatInrWhole(member.financialSummary?.lifetime?.totalPending ?? 0)}
-                        </Text>
-                      </Descriptions.Item>
-                    </Descriptions>
-                    <Divider orientationMargin={8} />
                     <Text strong>Current Membership</Text>
                     <Descriptions column={1} size="small" bordered style={{ marginTop: 8 }} {...alignedDescriptionsSharedProps}>
                       <Descriptions.Item label="Membership Type">{stripPlanNamePriceSuffix(member.currentSubscription?.planName) || "—"}</Descriptions.Item>
@@ -340,6 +330,17 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
                         <Text type="danger">{currentPayment ? formatInrWhole(currentPayment.remainingAmount) : "—"}</Text>
                       </Descriptions.Item>
                     </Descriptions>
+                    <Divider orientationMargin={8} />
+                    <Text strong>Payment summary (₹)</Text>
+                    <Descriptions column={1} size="small" bordered style={{ marginTop: 8 }} {...alignedDescriptionsSharedProps}>
+                      <Descriptions.Item label="Lifetime Total Paid (₹)">{formatInrWhole(member.financialSummary?.lifetime?.totalPaid ?? 0)}</Descriptions.Item>
+                      <Descriptions.Item label="Total Pending (all memberships) (₹)">
+                        <Text type={member.financialSummary?.lifetime?.totalPending ? "danger" : undefined}>
+                          {formatInrWhole(member.financialSummary?.lifetime?.totalPending ?? 0)}
+                        </Text>
+                      </Descriptions.Item>
+                    </Descriptions>
+
                     <Divider orientationMargin={8} />
                     <Text strong>Personal details</Text>
                     <Descriptions column={1} size="small" bordered style={{ marginTop: 8 }} {...alignedDescriptionsSharedProps}>

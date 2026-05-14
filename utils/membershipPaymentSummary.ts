@@ -32,9 +32,13 @@ function normalizeMoney(value: unknown): number {
   return roundMoney(numeric);
 }
 
-export function calculateMembershipPaymentSummary(
+/** Plan + misc + trainer; discount is applied only when computing final (never added to subtotal). */
+export function computeMembershipMoneyLines(
   input: MembershipPaymentSummaryInput
-): MembershipPaymentSummary {
+): Pick<
+  MembershipPaymentSummary,
+  "planAmount" | "miscFeeAmount" | "personalTrainerFeeAmount" | "discountAmount" | "subtotalAmount" | "finalPayableAmount"
+> {
   const planAmount = normalizeMoney(input.planPrice);
   const miscFeeAmount = input.miscFeesEnabled === false ? 0 : normalizeMoney(input.miscFeeAmount);
   const personalTrainerFeeAmount =
@@ -42,6 +46,21 @@ export function calculateMembershipPaymentSummary(
   const subtotalAmount = roundMoney(planAmount + miscFeeAmount + personalTrainerFeeAmount);
   const discountAmount = Math.min(normalizeMoney(input.discountAmount), subtotalAmount);
   const finalPayableAmount = roundMoney(Math.max(0, subtotalAmount - discountAmount));
+  return {
+    planAmount,
+    miscFeeAmount,
+    personalTrainerFeeAmount,
+    discountAmount,
+    subtotalAmount,
+    finalPayableAmount
+  };
+}
+
+export function calculateMembershipPaymentSummary(
+  input: MembershipPaymentSummaryInput
+): MembershipPaymentSummary {
+  const { planAmount, miscFeeAmount, personalTrainerFeeAmount, discountAmount, subtotalAmount, finalPayableAmount } =
+    computeMembershipMoneyLines(input);
   const paidAmount = Math.min(normalizeMoney(input.paidAmount), finalPayableAmount);
   const remainingAmount = roundMoney(Math.max(0, finalPayableAmount - paidAmount));
   const status: MembershipPaymentSummary["status"] =

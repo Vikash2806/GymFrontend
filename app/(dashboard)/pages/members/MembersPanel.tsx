@@ -52,7 +52,7 @@ import { formatInrWhole } from "@/utils/formatCurrency";
 import { stripPlanNamePriceSuffix } from "@/utils/planDisplayName";
 import { FEATURES, hasFeature } from "@/utils/permissions";
 import { getCityOptions, getCountryOptions, getStateOptions } from "@/utils/options";
-import { calculateMembershipPaymentSummary } from "@/utils/membershipPaymentSummary";
+import { calculateMembershipPaymentSummary, computeMembershipMoneyLines } from "@/utils/membershipPaymentSummary";
 import ExportButton from "@/app/components/Export/ExportButton";
 import OverduePaymentModal from "@/app/components/payments/OverduePaymentModal";
 import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
@@ -128,7 +128,7 @@ function mapMemberFieldLabel(path: Array<string | number>): string {
     planId: "Membership plan",
     miscFeeAmount: "Misc fees",
     personalTrainerFeeAmount: "Personal trainer fee",
-    discountAmount: "Discount amount",
+    discountAmount: "Discount (off subtotal)",
     paidAmount: "Paid amount",
     paymentMethod: "Payment method",
     notes: "Notes"
@@ -204,6 +204,15 @@ function displayMemberAge(m: Member): string {
 
 function moneyEqualsCents(a: unknown, b: unknown): boolean {
   return Math.round((Number(a) || 0) * 100) === Math.round((Number(b) || 0) * 100);
+}
+
+/** Coerce Form / InputNumber watch values to finite rupees (avoids string quirks in money math). */
+function watchMoney(v: unknown): number {
+  const n = Number(v ?? 0);
+  if (!Number.isFinite(n) || n < 0) {
+    return 0;
+  }
+  return Math.round(n * 100) / 100;
 }
 
 type FormShape = {
@@ -455,11 +464,11 @@ export default function MembersPanel({
       calculateMembershipPaymentSummary({
         planPrice: selectedPlanPrice ?? 0,
         miscFeesEnabled: Boolean(watchedMiscFeesEnabled),
-        miscFeeAmount: watchedMiscFeeAmount,
+        miscFeeAmount: watchMoney(watchedMiscFeeAmount),
         personalTrainerEnabled: Boolean(watchedPersonalTrainerEnabled),
-        personalTrainerFeeAmount: watchedPersonalTrainerFeeAmount,
-        discountAmount: watchedDiscountAmount,
-        paidAmount: watchedPaidAmount
+        personalTrainerFeeAmount: watchMoney(watchedPersonalTrainerFeeAmount),
+        discountAmount: watchMoney(watchedDiscountAmount),
+        paidAmount: watchMoney(watchedPaidAmount)
       }),
     [
       selectedPlanPrice,
@@ -474,13 +483,13 @@ export default function MembersPanel({
 
   const finalPayableForPaidSync = useMemo(
     () =>
-      calculateMembershipPaymentSummary({
+      computeMembershipMoneyLines({
         planPrice: selectedPlanPrice ?? 0,
         miscFeesEnabled: Boolean(watchedMiscFeesEnabled),
-        miscFeeAmount: watchedMiscFeeAmount,
+        miscFeeAmount: watchMoney(watchedMiscFeeAmount),
         personalTrainerEnabled: Boolean(watchedPersonalTrainerEnabled),
-        personalTrainerFeeAmount: watchedPersonalTrainerFeeAmount,
-        discountAmount: watchedDiscountAmount,
+        personalTrainerFeeAmount: watchMoney(watchedPersonalTrainerFeeAmount),
+        discountAmount: watchMoney(watchedDiscountAmount),
         paidAmount: 0
       }).finalPayableAmount,
     [
@@ -756,13 +765,13 @@ export default function MembersPanel({
     if (!matchedPlan) {
       return;
     }
-    const createdPlanFinal = calculateMembershipPaymentSummary({
+    const createdPlanFinal = computeMembershipMoneyLines({
       planPrice: Number(matchedPlan.price ?? 0),
       miscFeesEnabled: Boolean(form.getFieldValue("miscFeesEnabled")),
-      miscFeeAmount: form.getFieldValue("miscFeeAmount"),
+      miscFeeAmount: watchMoney(form.getFieldValue("miscFeeAmount")),
       personalTrainerEnabled: Boolean(form.getFieldValue("personalTrainerEnabled")),
-      personalTrainerFeeAmount: form.getFieldValue("personalTrainerFeeAmount"),
-      discountAmount: form.getFieldValue("discountAmount"),
+      personalTrainerFeeAmount: watchMoney(form.getFieldValue("personalTrainerFeeAmount")),
+      discountAmount: watchMoney(form.getFieldValue("discountAmount")),
       paidAmount: 0
     }).finalPayableAmount;
     form.setFieldsValue({
@@ -2152,8 +2161,8 @@ export default function MembersPanel({
 
                     <Row gutter={16}>
                     <Col xs={24} sm={12}>
-                        <Form.Item name="discountAmount" label="Discount amount">
-                          <InputNumber min={0} step={100} style={{ width: "100%" }} />
+                        <Form.Item name="discountAmount" label="Discount (off subtotal)" tooltip="Reduces total after plan + misc + trainer fees.">
+                          <InputNumber min={0} max={paymentPreview.subtotalAmount} step={100} style={{ width: "100%" }} />
                         </Form.Item>
                       </Col>
                       <Col xs={24} sm={12}>
@@ -2196,11 +2205,18 @@ export default function MembersPanel({
                         </div>
                         <div style={paymentSummaryRowStyle}>
                           <Text>Discount</Text>
-                          <Text style={paymentSummaryValueStyle}>{formatInrWhole(paymentPreview.discountAmount)}</Text>
+                          <Text type="secondary" style={paymentSummaryValueStyle}>
+                            {paymentPreview.discountAmount > 0 ? `−${formatInrWhole(paymentPreview.discountAmount)}` : formatInrWhole(0)}
+                          </Text>
                         </div>
-                        <div style={{ ...paymentSummaryRowStyle, borderTop: `1px solid ${token.colorBorderSecondary}`, paddingTop: 8 }}>
-                          <Text strong>Final payable</Text>
-                          <Text strong style={paymentSummaryValueStyle}>{formatInrWhole(paymentPreview.finalPayableAmount)}</Text>
+                        <div style={{ borderTop: `1px solid ${token.colorBorderSecondary}`, paddingTop: 8 }}>
+                          <div style={paymentSummaryRowStyle}>
+                            <Text strong>Final payable</Text>
+                            <Text strong style={paymentSummaryValueStyle}>{formatInrWhole(paymentPreview.finalPayableAmount)}</Text>
+                          </div>
+                          <Text type="secondary" style={{ fontSize: 11, lineHeight: 1.35, display: "block", marginTop: 4 }}>
+                            Plan + misc + trainer − discount
+                          </Text>
                         </div>
                         <div style={paymentSummaryRowStyle}>
                           <Text>Paid amount</Text>
