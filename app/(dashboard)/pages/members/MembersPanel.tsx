@@ -202,6 +202,10 @@ function displayMemberAge(m: Member): string {
   return "—";
 }
 
+function moneyEqualsCents(a: unknown, b: unknown): boolean {
+  return Math.round((Number(a) || 0) * 100) === Math.round((Number(b) || 0) * 100);
+}
+
 type FormShape = {
   branchId: string;
   firstName: string;
@@ -323,6 +327,8 @@ export default function MembersPanel({
   ]);
   const planRequestSeq = useRef(0);
   const skipNextUrlDrivenFilterSyncRef = useRef(false);
+  /** Last final payable used for auto-filled paid amount; null until first Plan & payment sync in this modal session. */
+  const prevFinalPayableForPaidSyncRef = useRef<number | null>(null);
   const [form] = Form.useForm<FormShape>();
   const watchedPhone = Form.useWatch("phone", form);
   const watchedBranchId = Form.useWatch("branchId", form);
@@ -466,6 +472,44 @@ export default function MembersPanel({
     ]
   );
 
+  const finalPayableForPaidSync = useMemo(
+    () =>
+      calculateMembershipPaymentSummary({
+        planPrice: selectedPlanPrice ?? 0,
+        miscFeesEnabled: Boolean(watchedMiscFeesEnabled),
+        miscFeeAmount: watchedMiscFeeAmount,
+        personalTrainerEnabled: Boolean(watchedPersonalTrainerEnabled),
+        personalTrainerFeeAmount: watchedPersonalTrainerFeeAmount,
+        discountAmount: watchedDiscountAmount,
+        paidAmount: 0
+      }).finalPayableAmount,
+    [
+      selectedPlanPrice,
+      watchedMiscFeesEnabled,
+      watchedMiscFeeAmount,
+      watchedPersonalTrainerEnabled,
+      watchedPersonalTrainerFeeAmount,
+      watchedDiscountAmount
+    ]
+  );
+
+  useEffect(() => {
+    if (!modalOpen || editing) {
+      return;
+    }
+    const nextFinal = finalPayableForPaidSync;
+    const paidRaw = form.getFieldValue("paidAmount");
+    const prevFinal = prevFinalPayableForPaidSyncRef.current;
+    const alignedWithSuggestion =
+      prevFinal === null
+        ? moneyEqualsCents(paidRaw, 0) || moneyEqualsCents(paidRaw, nextFinal)
+        : moneyEqualsCents(paidRaw, prevFinal);
+    if (alignedWithSuggestion && !moneyEqualsCents(paidRaw, nextFinal)) {
+      form.setFieldsValue({ paidAmount: nextFinal });
+    }
+    prevFinalPayableForPaidSyncRef.current = nextFinal;
+  }, [modalOpen, editing, finalPayableForPaidSync, form]);
+
   useEffect(() => {
     if (editing) {
       setPlans([]);
@@ -605,6 +649,7 @@ export default function MembersPanel({
     setLookupMember(null);
     setLookupNote("");
     form.resetFields();
+    prevFinalPayableForPaidSyncRef.current = null;
     form.setFieldsValue({
       branchId: effectiveBranchId || defaultBranchId,
       gender: "male",
@@ -711,10 +756,20 @@ export default function MembersPanel({
     if (!matchedPlan) {
       return;
     }
+    const createdPlanFinal = calculateMembershipPaymentSummary({
+      planPrice: Number(matchedPlan.price ?? 0),
+      miscFeesEnabled: Boolean(form.getFieldValue("miscFeesEnabled")),
+      miscFeeAmount: form.getFieldValue("miscFeeAmount"),
+      personalTrainerEnabled: Boolean(form.getFieldValue("personalTrainerEnabled")),
+      personalTrainerFeeAmount: form.getFieldValue("personalTrainerFeeAmount"),
+      discountAmount: form.getFieldValue("discountAmount"),
+      paidAmount: 0
+    }).finalPayableAmount;
     form.setFieldsValue({
       planId: matchedPlan._id,
-      paidAmount: Number(matchedPlan.price ?? 0)
+      paidAmount: createdPlanFinal
     });
+    prevFinalPayableForPaidSyncRef.current = createdPlanFinal;
     setPendingCreatedPlan(null);
     onCreatedPlanHandled?.();
     onMemberDraftHandled?.();
@@ -724,6 +779,7 @@ export default function MembersPanel({
     setModalOpen(false);
     setEditing(null);
     setNewMembershipTarget(null);
+    prevFinalPayableForPaidSyncRef.current = null;
     form.resetFields();
     setLookupMember(null);
     setLookupNote("");
@@ -750,6 +806,7 @@ export default function MembersPanel({
     setLookupNote(`Assigning new membership for ${record.firstName} ${record.lastName}.`);
     void loadPlans(record.branchId);
     form.resetFields();
+    prevFinalPayableForPaidSyncRef.current = null;
     form.setFieldsValue({
       planId: undefined,
       miscFeesEnabled: false,
@@ -1063,7 +1120,7 @@ export default function MembersPanel({
           paidAmount: membershipValues.paidAmount
         });
         if (Number(membershipValues.paidAmount ?? 0) > paymentSummary.finalPayableAmount) {
-          form.setFieldValue("paidAmount", paymentSummary.finalPayableAmount);
+          form.setFieldsValue({ paidAmount: paymentSummary.finalPayableAmount });
           message.warning(PAYMENT_CAP_MESSAGE);
         }
         setSubmitting(true);
@@ -1170,7 +1227,7 @@ export default function MembersPanel({
         paidAmount: values.paidAmount
       });
       if (Number(values.paidAmount ?? 0) > paymentSummary.finalPayableAmount) {
-        form.setFieldValue("paidAmount", paymentSummary.finalPayableAmount);
+        form.setFieldsValue({ paidAmount: paymentSummary.finalPayableAmount });
         message.warning(PAYMENT_CAP_MESSAGE);
       }
 
@@ -2100,13 +2157,7 @@ export default function MembersPanel({
                         </Form.Item>
                       </Col>
                       <Col xs={24} sm={12}>
-                        <Form.Item
-                          key={`paidAmount-${String(watchedPlanId ?? "none")}`}
-                          name="paidAmount"
-                          label="Paid amount"
-                          initialValue={paymentPreview.finalPayableAmount}
-                          preserve={false}
-                        >
+                        <Form.Item name="paidAmount" label="Paid amount">
                           <InputNumber
                             min={0}
                             max={paymentPreview.finalPayableAmount}
