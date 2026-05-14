@@ -1,0 +1,36 @@
+/* Unified layout for every Descriptions table in this modal */
+.memberDetailsModal :global(.ant-descriptions-bordered > .ant-descriptions-view > table) {
+  table-layout: fixed;
+  width: 100%;
+}
+
+/* A bit more horizontal breathing room between label/value columns */
+.memberDetailsModal
+  :global(.ant-descriptions-bordered.ant-descriptions-small .ant-descriptions-row > .ant-descriptions-item-label),
+.memberDetailsModal
+  :global(.ant-descriptions-bordered.ant-descriptions-small .ant-descriptions-row > .ant-descriptions-item-content) {
+  padding-block: 10px;
+  padding-inline: 14px;
+}
+
+/* Keep label/value columns visually centered in the modal (pairs with alignedDescriptionsSharedProps in TSX). */
+.memberDetailsModal
+  :global(.ant-descriptions-bordered.ant-descriptions-small .ant-descriptions-row > .ant-descriptions-item-label) {
+  width: 50%;
+}
+
+.memberDetailsModal
+  :global(.ant-descriptions-bordered.ant-descriptions-small .ant-descriptions-row > .ant-descriptions-item-content) {
+  width: 50%;
+}
+
+/* History + transactions tables: same full width and cell spacing */
+.memberDetailsModal :global(.ant-table-wrapper) {
+  width: 100%;
+}
+
+.memberDetailsModal :global(.ant-table.ant-table-small .ant-table-thead > tr > th),
+.memberDetailsModal :global(.ant-table.ant-table-small .ant-table-tbody > tr > td) {
+  padding-block: 10px;
+  padding-inline: 14px;
+}

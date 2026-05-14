@@ -9,9 +9,17 @@ import { stripPlanNamePriceSuffix } from "@/utils/planDisplayName";
 import type { Member } from "@/types/member";
 import apiClient from "@/utils/api";
 import type { ColumnsType } from "antd/es/table";
-import { calculateMembershipPaymentSummary } from "@/utils/membershipPaymentSummary";
+import styles from "./MemberDetailsModal.module.css";
 
 const { Title, Text } = Typography;
+
+/** Same label/value split on every bordered Descriptions (~half / half so the divider sits near the modal center). */
+const alignedDescriptionsSharedProps = {
+  styles: {
+    label: { width: "50%", verticalAlign: "top" as const, wordBreak: "break-word" as const },
+    content: { width: "50%", verticalAlign: "top" as const }
+  }
+};
 
 type SubscriptionHistoryItem = {
   _id: string;
@@ -96,25 +104,8 @@ function ageFromDob(iso: string | null): string {
 
 export default function MemberDetailsModal({ open, member, onClose }: MemberDetailsModalProps) {
   const { token } = theme.useToken();
-  const currentPayment = useMemo(() => {
-    if (!member?.currentSubscription?.payment) {
-      return null;
-    }
-    const p = member.currentSubscription.payment;
-    const listLine = member.currentSubscription.pricing?.listPrice;
-    const planPrice = Math.max(
-      Number(p.planAmount ?? 0),
-      Number(p.totalAmount ?? 0),
-      Number(listLine ?? 0)
-    );
-    return calculateMembershipPaymentSummary({
-      planPrice,
-      miscFeeAmount: p.miscFeeAmount,
-      personalTrainerFeeAmount: p.personalTrainerFeeAmount,
-      discountAmount: p.discountAmount,
-      paidAmount: p.paidAmount ?? 0
-    });
-  }, [member]);
+  // Show stored payment lines only; recomputing from Math.max(planAmount, totalAmount, listPrice) could treat subtotal/list as plan and double-count trainer fees.
+  const currentPayment = member?.currentSubscription?.payment ?? null;
   const [activeTab, setActiveTab] = useState<"details" | "history" | "transactions">("details");
   const [historyPage, setHistoryPage] = useState(1);
   const historyPageSize = 5;
@@ -292,7 +283,7 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
       styles={{ body: { maxHeight: "70vh", overflowY: "auto" } }}
     >
       {member ? (
-        <>
+        <div className={styles.memberDetailsModal}>
           <Space align="start" size={16} style={{ marginBottom: 16 }}>
             <Avatar size={64} src={member.profile.profilePicture || undefined}>
               {!member.profile.profilePicture ? `${member.firstName.charAt(0)}${member.lastName.charAt(0)}` : null}
@@ -315,7 +306,7 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
                 label: "Details",
                 children: (
                   <>
-                    <Descriptions column={1} size="small" bordered>
+                    <Descriptions column={1} size="small" bordered {...alignedDescriptionsSharedProps}>
                       <Descriptions.Item label="Phone">+91{member.profile.phone}</Descriptions.Item>
                       <Descriptions.Item label="Date of Birth">{member.profile.dob ? formatDisplayDate(member.profile.dob) : "N/A"}</Descriptions.Item>
                       <Descriptions.Item label="Age">
@@ -324,14 +315,18 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
                       {member.profile.weightKg != null && Number.isFinite(member.profile.weightKg) ? <Descriptions.Item label="Weight (kg)">{member.profile.weightKg}</Descriptions.Item> : null}
                     </Descriptions>
                     <Divider orientationMargin={8} />
-                    <Text strong>Membership</Text>
-                    <Descriptions column={1} size="small" bordered style={{ marginTop: 8 }}>
+                    <Text strong>Payment summary (₹)</Text>
+                    <Descriptions column={1} size="small" bordered style={{ marginTop: 8 }} {...alignedDescriptionsSharedProps}>
                       <Descriptions.Item label="Lifetime Total Paid (₹)">{formatInrWhole(member.financialSummary?.lifetime?.totalPaid ?? 0)}</Descriptions.Item>
                       <Descriptions.Item label="Total Pending (all memberships) (₹)">
                         <Text type={member.financialSummary?.lifetime?.totalPending ? "danger" : undefined}>
                           {formatInrWhole(member.financialSummary?.lifetime?.totalPending ?? 0)}
                         </Text>
                       </Descriptions.Item>
+                    </Descriptions>
+                    <Divider orientationMargin={8} />
+                    <Text strong>Current Membership</Text>
+                    <Descriptions column={1} size="small" bordered style={{ marginTop: 8 }} {...alignedDescriptionsSharedProps}>
                       <Descriptions.Item label="Membership Type">{stripPlanNamePriceSuffix(member.currentSubscription?.planName) || "—"}</Descriptions.Item>
                       <Descriptions.Item label="Plan Amount (₹)">{currentPayment ? formatInrWhole(currentPayment.planAmount) : "—"}</Descriptions.Item>
                       <Descriptions.Item label="Misc Fees (₹)">{currentPayment ? formatInrWhole(currentPayment.miscFeeAmount) : "—"}</Descriptions.Item>
@@ -347,7 +342,7 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
                     </Descriptions>
                     <Divider orientationMargin={8} />
                     <Text strong>Personal details</Text>
-                    <Descriptions column={1} size="small" bordered style={{ marginTop: 8 }}>
+                    <Descriptions column={1} size="small" bordered style={{ marginTop: 8 }} {...alignedDescriptionsSharedProps}>
                       <Descriptions.Item label="Gender">{member.profile.gender}</Descriptions.Item>
                       <Descriptions.Item label="Address">
                         {[member.address.street, member.address.city, member.address.state, member.address.zipcode].filter(Boolean).join(", ") || "N/A"}
@@ -390,7 +385,7 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
               }
             ]}
           />
-        </>
+        </div>
       ) : (
         <div style={{ padding: 24, textAlign: "center" }}>
           <Text type="secondary">Loading...</Text>
