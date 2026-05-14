@@ -485,18 +485,6 @@ export default function MembersPanel({
   }, [editing, modalOpen, plans, form]);
 
   useEffect(() => {
-    if (!watchedMiscFeesEnabled) {
-      form.setFieldValue("miscFeeAmount", 0);
-    }
-  }, [watchedMiscFeesEnabled, form]);
-
-  useEffect(() => {
-    if (!watchedPersonalTrainerEnabled) {
-      form.setFieldValue("personalTrainerFeeAmount", 0);
-    }
-  }, [watchedPersonalTrainerEnabled, form]);
-
-  useEffect(() => {
     void loadMembers();
   }, [loadMembers]);
 
@@ -1784,9 +1772,15 @@ export default function MembersPanel({
           layout="vertical"
           requiredMark
           style={{ marginTop: 8 }}
-          onValuesChange={() => {
+          onValuesChange={(changedValues) => {
             setModalDirty(true);
             setDirty("members-modal", true);
+            if ("miscFeesEnabled" in changedValues && changedValues.miscFeesEnabled === false) {
+              form.setFieldValue("miscFeeAmount", 0);
+            }
+            if ("personalTrainerEnabled" in changedValues && changedValues.personalTrainerEnabled === false) {
+              form.setFieldValue("personalTrainerFeeAmount", 0);
+            }
           }}
         >
           {isAssigningNewMembership ? (
@@ -2054,12 +2048,20 @@ export default function MembersPanel({
                             }
                           />
                         </Form.Item>
+
                       </Col>
                       <Col xs={24} sm={12}>
-                        <Form.Item name="discountAmount" label="Discount amount">
-                          <InputNumber min={0} step={100} style={{ width: "100%" }} />
+                        <Form.Item name="paymentMethod" label="Payment method">
+                          <Select
+                            options={[
+                              { value: "cash", label: "Cash" },
+                              { value: "upi", label: "UPI" },
+                              { value: "card", label: "Card" }
+                            ]}
+                          />
                         </Form.Item>
                       </Col>
+                      
                     </Row>
                     <Row gutter={16}>
                       <Col xs={24} sm={12}>
@@ -2076,24 +2078,6 @@ export default function MembersPanel({
                         </Form.Item>
                       </Col>
                       <Col xs={24} sm={12}>
-                        <Form.Item
-                          key={`paidAmount-${String(watchedPlanId ?? "none")}`}
-                          name="paidAmount"
-                          label="Paid amount"
-                          initialValue={paymentPreview.finalPayableAmount}
-                          preserve={false}
-                        >
-                          <InputNumber
-                            min={0}
-                            max={paymentPreview.finalPayableAmount}
-                            step={100}
-                            style={{ width: "100%" }}
-                          />
-                        </Form.Item>
-                      </Col>
-                    </Row>
-                    <Row gutter={16}>
-                      <Col xs={24} sm={12}>
                         <Form.Item name="personalTrainerEnabled" valuePropName="checked" style={{ marginBottom: 8 }}>
                           <Checkbox>Personal trainer</Checkbox>
                         </Form.Item>
@@ -2106,14 +2090,28 @@ export default function MembersPanel({
                           />
                         </Form.Item>
                       </Col>
+                     
+                    </Row>
+
+                    <Row gutter={16}>
+                    <Col xs={24} sm={12}>
+                        <Form.Item name="discountAmount" label="Discount amount">
+                          <InputNumber min={0} step={100} style={{ width: "100%" }} />
+                        </Form.Item>
+                      </Col>
                       <Col xs={24} sm={12}>
-                        <Form.Item name="paymentMethod" label="Payment method">
-                          <Select
-                            options={[
-                              { value: "cash", label: "Cash" },
-                              { value: "upi", label: "UPI" },
-                              { value: "card", label: "Card" }
-                            ]}
+                        <Form.Item
+                          key={`paidAmount-${String(watchedPlanId ?? "none")}`}
+                          name="paidAmount"
+                          label="Paid amount"
+                          initialValue={paymentPreview.finalPayableAmount}
+                          preserve={false}
+                        >
+                          <InputNumber
+                            min={0}
+                            max={paymentPreview.finalPayableAmount}
+                            step={100}
+                            style={{ width: "100%" }}
                           />
                         </Form.Item>
                       </Col>
