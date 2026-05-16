@@ -20,31 +20,36 @@ export default function ParentAuthWrapper({ children }: Props) {
   const dispatch = useDispatch<AppDispatch>();
   const session = useSelector(selectSession);
   const isLoggedIn = useSelector(selectIsLoggedIn);
-  const [verifying, setVerifying] = useState(true);
+  const [mounted, setMounted] = useState(false);
+  const [verifying, setVerifying] = useState(false);
 
   useEffect(() => {
-    if (!session) {
-      return;
-    }
-    if (typeof window === "undefined") {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted || !session) {
       return;
     }
     const pathname = window.location.pathname;
     if (!canAccessRoute(pathname, session)) {
       router.replace(getFirstAccessibleRouteFromAccess(session));
     }
-  }, [router, session]);
+  }, [mounted, router, session]);
 
   useEffect(() => {
+    if (!mounted) {
+      return;
+    }
     if (!isLoggedIn) {
       router.replace("/login");
       return;
     }
 
     let cancelled = false;
+    setVerifying(true);
 
     void (async () => {
-      setVerifying(true);
       try {
         const { data } = await apiClient.get<SessionPayload>("/auth/me");
         if (!cancelled) {
@@ -64,23 +69,23 @@ export default function ParentAuthWrapper({ children }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [dispatch, isLoggedIn, router]);
+  }, [dispatch, isLoggedIn, mounted, router]);
 
-  if (!isLoggedIn) {
-    return null;
-  }
-
-  if (verifying) {
-    return (
-      <AuthVerifyingLayout>
-        <Spin size="large" tip="Verifying session…">
-          <div style={{ minHeight: 64, minWidth: 160 }} aria-hidden />
-        </Spin>
-      </AuthVerifyingLayout>
-    );
+  if (!mounted || !isLoggedIn || verifying) {
+    return <AuthVerifyingSpinner />;
   }
 
   return <>{children}</>;
+}
+
+function AuthVerifyingSpinner() {
+  return (
+    <AuthVerifyingLayout>
+      <Spin size="large" tip="Verifying session…">
+        <div style={{ minHeight: 64, minWidth: 160 }} aria-hidden />
+      </Spin>
+    </AuthVerifyingLayout>
+  );
 }
 
 function AuthVerifyingLayout({ children }: { children: React.ReactNode }) {

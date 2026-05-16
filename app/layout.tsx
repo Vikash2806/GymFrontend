@@ -22,7 +22,7 @@ type RootLayoutProps = Readonly<{ children: React.ReactNode }>;
 
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body suppressHydrationWarning className={`${inter.variable} ${dmSans.variable}`}>
         <AppProviders>{children}</AppProviders>
       </body>
