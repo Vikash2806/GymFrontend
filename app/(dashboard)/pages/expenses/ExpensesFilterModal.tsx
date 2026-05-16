@@ -51,7 +51,7 @@ export default function ExpensesFilterModal({
     () => categories.find((category) => category.id === draft.categoryId) ?? null,
     [categories, draft.categoryId]
   );
-  const employeeEnabled = selectedCategory?.showEmployeeDetails === true && selectedCategory?.listBranchUsers === true;
+  const employeeEnabled = selectedCategory?.showEmployeeDetails === true;
   const employeeOptionsWithGeneral = useMemo(
     () => [{ value: GENERAL_EMPLOYEE_OPTION_VALUE, label: "General" }, ...employeeOptions],
     [employeeOptions]

@@ -26,7 +26,7 @@ import { WIDE_MODAL_WIDTH } from "@/utils/modalWidths";
 import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
 import { canAccessStaffUsersModule, gymMembershipRoleFromSession } from "@/utils/gymRole";
-import { FEATURES, getFirstAccessibleRoute, hasFeature } from "@/utils/permissions";
+import { FEATURES, getFirstAccessibleRoute, hasModuleAction } from "@/utils/permissions";
 import { isValidIndianMobile, stripToIndianMobileDigits, toE164IndianMobile } from "@/utils/mobileValidation";
 import { normalizeOptionalEmail } from "@/utils/emailValidation";
 import { PASSWORD_MIN_LENGTH_MESSAGE, validateOptionalPasswordMinLength } from "@/utils/passwordValidation";
@@ -150,8 +150,10 @@ export default function StaffManagerPanel() {
   const { setDirty, clearDirty, confirmNavigation } = useUnsavedChanges();
 
   const canAccess = canAccessStaffUsersModule(session);
-  const canCreateStaff = hasFeature(session, FEATURES.STAFF_MANAGEMENT);
-  const canUpdateStaff = hasFeature(session, FEATURES.STAFF_MANAGEMENT);
+  const canCreateStaff = hasModuleAction(session, FEATURES.STAFF_MANAGEMENT, "create");
+  const canUpdateStaff = hasModuleAction(session, FEATURES.STAFF_MANAGEMENT, "edit");
+  const canDeleteStaff = hasModuleAction(session, FEATURES.STAFF_MANAGEMENT, "delete");
+  const canExportStaff = hasModuleAction(session, FEATURES.STAFF_MANAGEMENT, "export");
 
   useEffect(() => {
     if (!canAccess) {
@@ -470,9 +472,9 @@ export default function StaffManagerPanel() {
               size="small"
               danger
               icon={<DeleteOutlined />}
-              disabled={!canUpdateStaff}
-              aria-label="Deactivate user"
-            />
+            disabled={!canDeleteStaff}
+            aria-label="Deactivate user"
+          />
           </Popconfirm>
         </Space>
       )
@@ -519,15 +521,17 @@ export default function StaffManagerPanel() {
           >
             Create User
           </Button>
-          <ExportButton
-            endpoint="/gym/staff-users/export"
-            params={{
-              role: roleFilter,
-              search: searchQuery || undefined,
-              branchId: defaultBranchId || undefined
-            }}
-            defaultFilename="staff-users.csv"
-          />
+          {canExportStaff ? (
+            <ExportButton
+              endpoint="/gym/staff-users/export"
+              params={{
+                role: roleFilter,
+                search: searchQuery || undefined,
+                branchId: defaultBranchId || undefined
+              }}
+              defaultFilename="staff-users.csv"
+            />
+          ) : null}
         </Space>
       </Flex>
 

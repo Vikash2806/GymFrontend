@@ -13,15 +13,15 @@ const ExpensesPanel = dynamic(() => import("./ExpensesPanel"), {
     </Card>
   )
 });
-import RbacPermissionGuard from "@/app/components/Auth/RbacPermissionGuard";
+import RbacModuleGuard from "@/app/components/Auth/RbacModuleGuard";
 import { FEATURES } from "@/utils/permissions";
 
 export default function ExpensesPage() {
   return (
-    <RbacPermissionGuard permission={FEATURES.EXPENSES}>
+    <RbacModuleGuard baseKey={FEATURES.EXPENSES} action="view">
       <Card styles={{ body: { paddingTop: 16 } }}>
         <ExpensesPanel />
       </Card>
-    </RbacPermissionGuard>
+    </RbacModuleGuard>
   );
 }

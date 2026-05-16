@@ -1,499 +1,57 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { App, Avatar, Button, Card, Form, Input, Progress, Space, Upload } from "antd";
-import { DeleteOutlined, ShopOutlined, UploadOutlined, UserOutlined } from "@ant-design/icons";
-import RbacPermissionGuard from "@/app/components/Auth/RbacPermissionGuard";
-import { FEATURES, hasFeature } from "@/utils/permissions";
-import { useAppDispatch, useAppSelector } from "@/redux/hooks";
-import { selectSession, setSession, updateGymInSession } from "@/redux/features/auth/authSlice";
-import apiClient from "@/utils/api";
-import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
-import { isValidIndianMobile, stripToIndianMobileDigits, toE164IndianMobile } from "@/utils/mobileValidation";
-import { useSearchParams } from "next/navigation";
-import Link from "next/link";
-import type { GymUsageSnapshotResponse } from "@/types/usage";
+import { Suspense, useEffect } from "react";
+import { Spin } from "antd";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useAppSelector } from "@/redux/hooks";
+import { selectSession } from "@/redux/features/auth/authSlice";
+import { FEATURES, getFirstAccessibleRoute, hasFeature } from "@/utils/permissions";
+import {
+  getFirstAccessibleSettingsRoute,
+  hasAnySettingsView,
+  SETTINGS_ROUTES
+} from "./settingsRoutes";
 
-type ProfileFormValues = {
-  fullName: string;
-  mobileNumber: string;
-  email?: string;
-  oldPassword?: string;
-  newPassword?: string;
-  confirmPassword?: string;
-};
-
-type GymFormValues = {
-  gymName: string;
-  supportPhone?: string;
-};
-
-type SettingsSectionKey = "profile" | "gym" | "pricing";
-type CurrentGymPlanResponse = {
-  success: boolean;
-  gymSubscription?: {
-    planName?: string;
-    startDate?: string | null;
-    endDate?: string | null;
-    billingStart?: string | null;
-    billingEnd?: string | null;
-  };
-};
-type UsageView = {
-  key: "members" | "users" | "branches" | "expenses";
-  label: string;
-  current: number;
-  max: number;
-};
-
-function formatDateLabel(value?: string | null): string {
-  if (!value) {
-    return "—";
-  }
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return "—";
-  }
-  return parsed.toLocaleDateString("en-GB");
-}
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ""));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}
-
-export default function SettingsPage() {
-  const { message } = App.useApp();
+function SettingsIndexRedirect() {
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const dispatch = useAppDispatch();
   const session = useAppSelector(selectSession);
-  const userFullName = session?.user?.fullName ?? "";
-  const userPhone = stripToIndianMobileDigits(session?.user?.phone ?? "");
-  const userEmail = session?.user?.email ?? "";
-  const gymName = session?.gym?.name ?? "";
-  const gymLogo = session?.gym?.logoUrl ?? null;
-  const canEditProfile = hasFeature(session, FEATURES.SETTINGS);
-  const canEditGymProfile = hasFeature(session, FEATURES.GYM_PROFILE);
-  const [profileForm] = Form.useForm<ProfileFormValues>();
-  const [gymForm] = Form.useForm<GymFormValues>();
-  const [profileSaving, setProfileSaving] = useState(false);
-  // undefined => unchanged, string => new/uploaded logo, null => explicitly remove logo
-  const [logoFile, setLogoFile] = useState<string | null | undefined>(undefined);
-  const [gymSaving, setGymSaving] = useState(false);
-  const [planLoading, setPlanLoading] = useState(false);
-  const [currentPlanName, setCurrentPlanName] = useState<string>("free");
-  const [currentPlanStartAt, setCurrentPlanStartAt] = useState<string | null>(null);
-  const [currentPlanEndAt, setCurrentPlanEndAt] = useState<string | null>(null);
-  const [usageRows, setUsageRows] = useState<UsageView[]>([]);
-  const { setDirty, clearDirty } = useUnsavedChanges();
-
-  const activeSection = (
-    searchParams.get("tab") === "gym"
-      ? "gym"
-      : searchParams.get("tab") === "pricing"
-        ? "pricing"
-        : "profile"
-  ) as SettingsSectionKey;
-  const roleLabel = useMemo(() => {
-    if (!session?.user?.defaults?.gymId || !session.user.associatedGyms) {
-      return "Staff";
-    }
-    const currentMembership = session.user.associatedGyms.find((membership) => membership.gymId === session.user.defaults!.gymId);
-    const role = currentMembership?.gymRole ?? "staff";
-    return role.charAt(0).toUpperCase() + role.slice(1);
-  }, [session]);
 
   useEffect(() => {
-    return () => {
-      clearDirty("settings-profile-page");
-      clearDirty("settings-page");
-    };
-  }, [clearDirty]);
-
-  useEffect(() => {
-    if (activeSection !== "pricing") {
+    if (!hasAnySettingsView(session)) {
+      router.replace(getFirstAccessibleRoute(session));
       return;
     }
-    const loadCurrentPlan = async () => {
-      setPlanLoading(true);
-      try {
-        const [{ data: planData }, { data: usageData }] = await Promise.all([
-          apiClient.get<CurrentGymPlanResponse>("/gym/pricing-plans/current-gym-plan"),
-          apiClient.get<GymUsageSnapshotResponse>("/gym/usage/check")
-        ]);
-        if (!planData.success) {
-          return;
-        }
-        const planName = planData.gymSubscription?.planName ?? "free";
-        const planStart = planData.gymSubscription?.billingStart ?? planData.gymSubscription?.startDate ?? null;
-        const planEnd = planData.gymSubscription?.billingEnd ?? planData.gymSubscription?.endDate ?? null;
-        setCurrentPlanName(planName);
-        setCurrentPlanStartAt(planStart);
-        setCurrentPlanEndAt(planEnd);
-        if (usageData.success && usageData.usage) {
-          setUsageRows([
-            {
-              key: "members",
-              label: "Members",
-              current: usageData.usage.members,
-              max: usageData.usage.maxMembers
-            },
-            {
-              key: "users",
-              label: "Users",
-              current: usageData.usage.users,
-              max: usageData.usage.maxUsers
-            },
-            {
-              key: "branches",
-              label: "Branches",
-              current: usageData.usage.branches,
-              max: usageData.usage.maxBranches
-            },
-            {
-              key: "expenses",
-              label: "Expenses",
-              current: usageData.usage.expenses,
-              max: usageData.usage.maxExpenses
-            }
-          ]);
-        } else {
-          setUsageRows([]);
-        }
-      } catch {
-        message.error("Could not load current plan details.");
-      } finally {
-        setPlanLoading(false);
-      }
-    };
-    void loadCurrentPlan();
-  }, [activeSection, message]);
-
-  const saveGymProfile = async () => {
-    if (!canEditGymProfile) {
-      message.error("You do not have permission to update gym profile.");
+    const tab = searchParams.get("tab");
+    if (tab === "gym" && hasFeature(session, FEATURES.GYM_PROFILE)) {
+      router.replace(SETTINGS_ROUTES.gym);
       return;
     }
-    const values = await gymForm.validateFields();
-    setGymSaving(true);
-    try {
-      const nextLogo = logoFile === undefined ? (gymLogo ?? null) : logoFile;
-      await apiClient.patch("/gym/me", {
-        name: values.gymName,
-        logoUrl: nextLogo
-      });
-      dispatch(updateGymInSession({ name: values.gymName, logoUrl: nextLogo }));
-      const me = await apiClient.get("/auth/me");
-      dispatch(setSession(me.data));
-      message.success("Gym profile updated.");
-      clearDirty("settings-page");
-    } catch {
-      message.error("Could not update gym profile.");
-    } finally {
-      setGymSaving(false);
-    }
-  };
-
-  const deleteGymProfilePicture = async () => {
-    if (!canEditGymProfile) {
-      message.error("You do not have permission to update gym profile.");
+    if (tab === "pricing" && hasFeature(session, FEATURES.SUBSCRIPTION_PRICING)) {
+      router.replace(SETTINGS_ROUTES.subscription);
       return;
     }
-    const currentGymName = String(gymForm.getFieldValue("gymName") ?? gymName).trim() || gymName;
-    setGymSaving(true);
-    try {
-      await apiClient.patch("/gym/me", {
-        name: currentGymName,
-        logoUrl: null
-      });
-      dispatch(updateGymInSession({ name: currentGymName, logoUrl: null }));
-      const me = await apiClient.get("/auth/me");
-      dispatch(setSession(me.data));
-      setLogoFile(undefined);
-      message.success("Gym profile picture deleted.");
-      clearDirty("settings-page");
-    } catch {
-      message.error("Could not delete gym profile picture.");
-    } finally {
-      setGymSaving(false);
-    }
-  };
-
-  const saveProfile = async () => {
-    if (!canEditProfile) {
-      message.error("You do not have permission to update profile.");
-      return;
-    }
-    const values = await profileForm.validateFields();
-    const mobileE164 = toE164IndianMobile(values.mobileNumber ?? "");
-    if (!mobileE164 || !isValidIndianMobile(mobileE164)) {
-      message.error("Please enter a valid mobile number.");
-      return;
-    }
-
-    setProfileSaving(true);
-    try {
-      await apiClient.patch("/auth/profile", {
-        fullName: values.fullName.trim(),
-        mobileNumber: mobileE164,
-        email: values.email?.trim() ? values.email.trim() : null,
-        oldPassword: values.oldPassword?.trim() || undefined,
-        newPassword: values.newPassword?.trim() || undefined
-      });
-      const me = await apiClient.get("/auth/me");
-      dispatch(setSession(me.data));
-      profileForm.setFieldsValue({
-        oldPassword: "",
-        newPassword: "",
-        confirmPassword: ""
-      });
-      message.success("Profile updated.");
-      clearDirty("settings-profile-page");
-    } catch (error) {
-      const errMessage =
-        typeof error === "object" &&
-        error !== null &&
-        "response" in error &&
-        typeof (error as { response?: { data?: { message?: string } } }).response?.data?.message === "string"
-          ? (error as { response?: { data?: { message?: string } } }).response!.data!.message!
-          : "Could not update profile.";
-      message.error(errMessage);
-    } finally {
-      setProfileSaving(false);
-    }
-  };
+    const target = getFirstAccessibleSettingsRoute(session) ?? getFirstAccessibleRoute(session);
+    router.replace(target);
+  }, [router, searchParams, session]);
 
   return (
-    <RbacPermissionGuard permission={FEATURES.SETTINGS}>
-      {activeSection === "profile" ? (
-        <Card title="Profile Settings">
-            <Form
-              key={`${userFullName}-${userPhone}-${userEmail}`}
-              form={profileForm}
-              layout="vertical"
-              initialValues={{
-                fullName: userFullName,
-                mobileNumber: userPhone,
-                email: userEmail || ""
-              }}
-              onValuesChange={() => {
-                setDirty("settings-profile-page", true);
-              }}
-            >
-              <Form.Item label="Role">
-                <Input value={roleLabel} prefix={<UserOutlined />} disabled />
-              </Form.Item>
-              <Form.Item
-                label="Name"
-                name="fullName"
-                rules={[
-                  { required: true, message: "Name is required." },
-                  { min: 2, message: "Name should be at least 2 characters." }
-                ]}
-              >
-                <Input placeholder="Enter full name" disabled={!canEditProfile} />
-              </Form.Item>
-              <Form.Item
-                label="Phone number"
-                name="mobileNumber"
-                getValueFromEvent={(event) => stripToIndianMobileDigits(event?.target?.value ?? "")}
-                rules={[
-                  { required: true, message: "Mobile number is required." },
-                  {
-                    validator: async (_, value: string) => {
-                      if (!value || value.trim().length !== 10 || !isValidIndianMobile(value)) {
-                        throw new Error("Enter a valid 10-digit Indian mobile number.");
-                      }
-                    }
-                  }
-                ]}
-              >
-                <Input
-                  placeholder="Enter mobile number"
-                  maxLength={10}
-                  disabled={!canEditProfile}
-                />
-              </Form.Item>
-              <Form.Item
-                label="Email (optional)"
-                name="email"
-                rules={[{ type: "email", message: "Enter a valid email address." }]}
-              >
-                <Input placeholder="Enter email" disabled={!canEditProfile} />
-              </Form.Item>
-              <Form.Item
-                label="Current password"
-                name="oldPassword"
-                rules={[
-                  ({ getFieldValue }) => ({
-                    validator: async (_, value) => {
-                      if (getFieldValue("newPassword") && !value) {
-                        throw new Error("Current password is required to set a new password.");
-                      }
-                    }
-                  })
-                ]}
-              >
-                <Input.Password placeholder="Enter current password" disabled={!canEditProfile} />
-              </Form.Item>
-              <Form.Item
-                label="New password"
-                name="newPassword"
-                rules={[
-                  ({ getFieldValue }) => ({
-                    validator: async (_, value: string) => {
-                      if (getFieldValue("oldPassword") && !value) {
-                        throw new Error("Please enter a new password.");
-                      }
-                      if (value && value.length < 6) {
-                        throw new Error("New password must be at least 6 characters.");
-                      }
-                    }
-                  })
-                ]}
-              >
-                <Input.Password placeholder="Enter new password" disabled={!canEditProfile} />
-              </Form.Item>
-              <Form.Item
-                label="Confirm new password"
-                name="confirmPassword"
-                dependencies={["newPassword"]}
-                rules={[
-                  ({ getFieldValue }) => ({
-                    validator: async (_, value: string) => {
-                      const nextPassword = getFieldValue("newPassword");
-                      if (!nextPassword) {
-                        return;
-                      }
-                      if (!value) {
-                        throw new Error("Please confirm the new password.");
-                      }
-                      if (value !== nextPassword) {
-                        throw new Error("Passwords do not match.");
-                      }
-                    }
-                  })
-                ]}
-              >
-                <Input.Password placeholder="Re-enter new password" disabled={!canEditProfile} />
-              </Form.Item>
-              <Space>
-                <Button type="primary" loading={profileSaving} onClick={() => void saveProfile()} disabled={!canEditProfile}>
-                  Save profile
-                </Button>
-              </Space>
-            </Form>
-        </Card>
-      ) : activeSection === "gym" ? (
-        <Card title="Gym Settings">
-            <Form
-              key={gymName}
-              form={gymForm}
-              layout="vertical"
-              initialValues={{ gymName, supportPhone: "" }}
-              onValuesChange={() => {
-                setDirty("settings-page", true);
-              }}
-            >
-              <Form.Item label="Gym name" name="gymName">
-                <Input placeholder="Enter gym name" disabled={!canEditGymProfile} />
-              </Form.Item>
-              <Form.Item label="Gym profile picture">
-                <Space direction="vertical" size={10}>
-                  <Avatar
-                    shape="square"
-                    size={72}
-                    src={(logoFile === undefined ? gymLogo : logoFile) ?? undefined}
-                    style={{ backgroundColor: "#1677ff" }}
-                    icon={<ShopOutlined />}
-                  />
-                  <Space>
-                    <Upload
-                      accept="image/*"
-                      maxCount={1}
-                      showUploadList={false}
-                      disabled={!canEditGymProfile}
-                      beforeUpload={async (file) => {
-                        try {
-                          const dataUrl = await readFileAsDataUrl(file);
-                          setLogoFile(dataUrl);
-                          setDirty("settings-page", true);
-                        } catch {
-                          message.error("Could not read file.");
-                        }
-                        return false;
-                      }}
-                    >
-                      <Button icon={<UploadOutlined />} disabled={!canEditGymProfile}>
-                        Upload profile picture
-                      </Button>
-                    </Upload>
-                    {((logoFile === undefined ? gymLogo : logoFile) ?? null) ? (
-                      <Button
-                        danger
-                        icon={<DeleteOutlined />}
-                        loading={gymSaving}
-                        disabled={!canEditGymProfile}
-                        onClick={() => void deleteGymProfilePicture()}
-                      >
-                        Delete picture
-                      </Button>
-                    ) : null}
-                  </Space>
-                </Space>
-              </Form.Item>
-              <Form.Item label="Support phone" name="supportPhone">
-                <Input placeholder="Enter support mobile number" />
-              </Form.Item>
-              <Space>
-                <Button
-                  type="primary"
-                  loading={gymSaving}
-                  onClick={() => void saveGymProfile()}
-                  disabled={!canEditGymProfile}
-                >
-                  Save changes
-                </Button>
-              </Space>
-            </Form>
-        </Card>
-      ) : (
-        <Card title="Subscription & Pricing">
-          <Space direction="vertical" size={12}>
-            <p>Manage your gym subscription, compare plans, and upgrade instantly.</p>
-            <div>
-              <div><strong>Current plan:</strong> {currentPlanName.toUpperCase()}</div>
-              <div><strong>Started at:</strong> {planLoading ? "Loading..." : formatDateLabel(currentPlanStartAt)}</div>
-              <div><strong>Expires at:</strong> {planLoading ? "Loading..." : formatDateLabel(currentPlanEndAt)}</div>
-            </div>
-            <div>
-              <strong>Usage</strong>
-              <Space direction="vertical" size={8} style={{ width: "100%", marginTop: 8 }}>
-                {usageRows.map((row) => {
-                  const max = row.max > 0 ? row.max : 1;
-                  const percent = Math.min(100, Math.round((row.current / max) * 100));
-                  return (
-                    <div key={row.key}>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
-                        <span>{row.label}</span>
-                        <span>{row.current} / {row.max}</span>
-                      </div>
-                      <Progress percent={percent} size="small" showInfo={false} />
-                    </div>
-                  );
-                })}
-              </Space>
-            </div>
-            <Button type="primary">
-              <Link href="/pricing?from=subscription">Manage / Upgrade Plan</Link>
-            </Button>
-          </Space>
-        </Card>
-      )}
-    </RbacPermissionGuard>
+    <div style={{ display: "flex", justifyContent: "center", padding: 48 }}>
+      <Spin size="large" />
+    </div>
+  );
+}
+
+export default function SettingsIndexPage() {
+  return (
+    <Suspense
+      fallback={
+        <div style={{ display: "flex", justifyContent: "center", padding: 48 }}>
+          <Spin size="large" />
+        </div>
+      }
+    >
+      <SettingsIndexRedirect />
+    </Suspense>
   );
 }

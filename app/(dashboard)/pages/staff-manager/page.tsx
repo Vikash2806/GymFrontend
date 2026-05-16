@@ -13,13 +13,13 @@ const StaffManagerPanel = dynamic(() => import("./StaffManagerPanel"), {
     </Card>
   )
 });
-import RbacPermissionGuard from "@/app/components/Auth/RbacPermissionGuard";
+import RbacModuleGuard from "@/app/components/Auth/RbacModuleGuard";
 import { FEATURES } from "@/utils/permissions";
 
 export default function StaffManagerPage() {
   return (
-    <RbacPermissionGuard permission={FEATURES.STAFF_MANAGEMENT}>
+    <RbacModuleGuard baseKey={FEATURES.STAFF_MANAGEMENT} action="view">
       <StaffManagerPanel />
-    </RbacPermissionGuard>
+    </RbacModuleGuard>
   );
 }

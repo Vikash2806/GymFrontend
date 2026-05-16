@@ -21,16 +21,19 @@ import {
   ShopOutlined
 } from "@ant-design/icons";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
-import {
-  logoutAsync,
-  selectSession,
-  setSession
-} from "@/redux/features/auth/authSlice";
+import { selectSession, setSession } from "@/redux/features/auth/authSlice";
+import { performUserLogout } from "@/utils/authSession";
 import { usePathname, useRouter } from "next/navigation";
 import apiClient from "@/utils/api";
 import type { SessionGymBranch, SessionPayload } from "@/redux/features/auth/sessionTypes";
 import { FEATURES, hasFeature } from "@/utils/permissions";
 import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
+import {
+  getFirstAccessibleSettingsRoute,
+  hasAnySettingsView,
+  isSettingsPath,
+  SETTINGS_DEFAULT_ROUTE
+} from "@/app/(dashboard)/pages/settings/settingsRoutes";
 
 const { Header } = Layout;
 const { Text } = Typography;
@@ -105,7 +108,9 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
   const branches = gym?.branches;
   const gymId = displaySession?.user?.defaults?.gymId ?? gym?.id ?? "";
   const membership = displaySession?.user?.associatedGyms?.find((g) => g.gymId === gymId);
-  const canOpenSettings = hasFeature(displaySession, FEATURES.SETTINGS);
+  const canOpenSettings = hasAnySettingsView(displaySession);
+  const settingsEntryRoute =
+    getFirstAccessibleSettingsRoute(displaySession) ?? SETTINGS_DEFAULT_ROUTE;
   const userRole = String(displaySession?.rbac?.role ?? membership?.gymRole ?? "").toLowerCase();
   const isOwner = userRole === "owner";
   const assignedBranchIds = useMemo(() => {
@@ -175,17 +180,14 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
       if (!canOpenSettings) {
         return;
       }
-      if (pathname !== "/pages/settings") {
-        confirmNavigation(() => router.push("/pages/settings"));
+      if (!isSettingsPath(pathname)) {
+        confirmNavigation(() => router.push(settingsEntryRoute));
       }
       return;
     }
     if (key === "logout") {
       confirmNavigation(() => {
-        void (async () => {
-          await dispatch(logoutAsync());
-          router.push("/login");
-        })();
+        performUserLogout();
       });
     }
   };
@@ -386,8 +388,8 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
               if (!canOpenSettings) {
                 return;
               }
-              if (pathname !== "/pages/settings") {
-                confirmNavigation(() => router.push("/pages/settings"));
+              if (!isSettingsPath(pathname)) {
+                confirmNavigation(() => router.push(settingsEntryRoute));
               }
             }}
             disabled={!canOpenSettings}

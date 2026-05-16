@@ -84,7 +84,7 @@ const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Se
 const TOP_N = 5;
 const KPI_CARD_HEIGHT = 118;
 
-type ListResponse = { success: boolean; members?: Member[]; message?: string };
+type ListResponse = { success: boolean; members?: Member[]; total?: number; message?: string };
 type MemberJoinTrendResponse = {
   success: boolean;
   trend?: Array<{ month: number; count: number }>;
@@ -161,7 +161,7 @@ export default function DashboardPanel() {
   }, []);
 
   const [year, setYear] = useState(() => new Date().getFullYear());
-  const [month, setMonth] = useState(() => new Date().getMonth() + 1);
+  const [month, setMonth] = useState(ALL_MONTHS_VALUE);
   const [loading, setLoading] = useState(false);
   const [overview, setOverview] = useState<FinanceOverviewPayload | null>(null);
   const [trendMetric, setTrendMetric] = useState<"revenue" | "members">("revenue");
@@ -201,7 +201,7 @@ export default function DashboardPanel() {
       const cacheKey = `finance-overview:${year}:${effectiveMonth}:${selectedBranchId || "all"}`;
       const data = await fetchCached(
         cacheKey,
-        async () => (await apiClient.get<FinanceOverviewResponse>("/gym/finance/overview", { params })).data,
+        async () => (await apiClient.get<FinanceOverviewResponse>("/gym/dashboard/metrics", { params })).data,
         20_000
       );
       if (reqId !== overviewReqSeq.current) {
@@ -240,7 +240,7 @@ export default function DashboardPanel() {
       const cacheKey = `finance-revenue-trend:${year}:${selectedBranchId || "all"}`;
       const data = await fetchCached(
         cacheKey,
-        async () => (await apiClient.get<RevenueYearTrendResponse>("/gym/finance/revenue-trend", { params })).data,
+        async () => (await apiClient.get<RevenueYearTrendResponse>("/gym/dashboard/revenue-trend", { params })).data,
         20_000
       );
       if (reqId !== revenueTrendReqSeq.current) {
@@ -284,7 +284,7 @@ export default function DashboardPanel() {
       const cacheKey = `finance-expenses-trend:${year}:${selectedBranchId || "all"}`;
       const data = await fetchCached(
         cacheKey,
-        async () => (await apiClient.get<ExpensesYearTrendResponse>("/gym/finance/expenses-trend", { params })).data,
+        async () => (await apiClient.get<ExpensesYearTrendResponse>("/gym/dashboard/expenses-trend", { params })).data,
         20_000
       );
       if (reqId !== expensesTrendReqSeq.current) {
@@ -361,10 +361,10 @@ export default function DashboardPanel() {
     setLoadingMembers(true);
     try {
       const { data } = await apiClient.get<ListResponse>("/gym/members", {
-        params: { branchId: resolvedBranchForMembers }
+        params: { branchId: resolvedBranchForMembers, page: 1, pageSize: 1 }
       });
-      if (data.success && Array.isArray(data.members)) {
-        setMemberCount(data.members.length);
+      if (data.success && typeof data.total === "number") {
+        setMemberCount(data.total);
       } else {
         setMemberCount(null);
       }

@@ -1,4 +1,5 @@
 import axios from "axios";
+import { handleSessionExpired } from "@/utils/authSession";
 
 const apiClient = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5050/api",
@@ -19,6 +20,7 @@ apiClient.interceptors.request.use((config) => {
   try {
     const parsed = JSON.parse(raw) as {
       token?: string;
+      activeBranch?: { id?: string };
       user?: { defaults?: { gymId?: string; branchId?: string } };
     };
 
@@ -36,7 +38,10 @@ apiClient.interceptors.request.use((config) => {
     }
 
     const gymId = parsed?.user?.defaults?.gymId;
-    const branchId = parsed?.user?.defaults?.branchId;
+    const branchId =
+      typeof parsed?.activeBranch?.id === "string" && parsed.activeBranch.id.trim()
+        ? parsed.activeBranch.id.trim()
+        : parsed?.user?.defaults?.branchId;
     if (gymId) {
       config.headers["X-Gym-Id"] = gymId;
     }
@@ -49,5 +54,18 @@ apiClient.interceptors.request.use((config) => {
 
   return config;
 });
+
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const status = error?.response?.status;
+    const requestUrl = String(error?.config?.url ?? "");
+    const isLogout = requestUrl.includes("/auth/logout");
+    if (status === 401 && typeof window !== "undefined" && !isLogout) {
+      handleSessionExpired();
+    }
+    return Promise.reject(error);
+  }
+);
 
 export default apiClient;

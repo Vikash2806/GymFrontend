@@ -18,8 +18,22 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { MenuProps } from "antd";
 import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
-import { FEATURES, getFirstAccessibleRoute, hasFeature } from "@/utils/permissions";
+import { getFirstAccessibleRoute } from "@/utils/permissions";
+import {
+  getFirstAccessibleRouteFromAccess,
+  isMainNavItemVisible,
+  isSettingsNavItemVisible,
+  type MainNavItemKey,
+  type SettingsNavItemKey
+} from "@/utils/routeAccess";
 import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
+import {
+  getFirstAccessibleSettingsRoute,
+  hasAnySettingsView,
+  isSettingsPath,
+  SETTINGS_DEFAULT_ROUTE,
+  SETTINGS_ROUTES
+} from "@/app/(dashboard)/pages/settings/settingsRoutes";
 
 const { Sider } = Layout;
 
@@ -50,7 +64,12 @@ const mainMenuItems: MenuItem[] = [
   },
   { key: "RbacAdmin", label: "Role Master", icon: <SettingOutlined />, route: "/admin/rbac" },
   
-  { key: "Settings", label: "Settings", icon: <SettingOutlined />, route: "/pages/settings" }
+  {
+    key: "Settings",
+    label: "Settings",
+    icon: <SettingOutlined />,
+    route: SETTINGS_DEFAULT_ROUTE
+  }
 ];
 
 const settingsMenuItems: MenuItem[] = [
@@ -59,7 +78,7 @@ const settingsMenuItems: MenuItem[] = [
     label: "Organization",
     icon: <UserOutlined />,
     children: [
-      { key: "settings-profile", label: "Profile Settings", route: "/pages/settings?tab=profile" }
+      { key: "settings-profile", label: "Profile Settings", route: SETTINGS_ROUTES.profile }
     ]
   },
   {
@@ -67,10 +86,10 @@ const settingsMenuItems: MenuItem[] = [
     label: "Master Settings",
     icon: <SettingOutlined />,
     children: [
-      { key: "settings-gym", label: "Gym Settings", route: "/pages/settings?tab=gym" },
-      { key: "settings-pricing", label: "Subscription & Pricing", route: "/pages/settings?tab=pricing" }
+      { key: "settings-gym", label: "Gym Settings", route: SETTINGS_ROUTES.gym },
+      { key: "settings-pricing", label: "Subscription & Pricing", route: SETTINGS_ROUTES.subscription }
     ]
-  },
+  }
 ];
 
 const flattenRoutes = (items: MenuItem[], map: Record<string, string>) => {
@@ -108,47 +127,35 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [openKeys, setOpenKeys] = useState<string[]>([]);
   const [collapsed, setCollapsed] = useState(false);
-  const isSettingsRoute = pathname.startsWith("/pages/settings");
+  const isSettingsRoute = isSettingsPath(pathname);
   const search = searchParams.toString();
   const currentRoute = search ? `${pathname}?${search}` : pathname;
 
   const mainMenuItemsFiltered = useMemo(() => {
-    return mainMenuItems.filter((item) => {
-      if (item.key === "Dashboard") {
-        return hasFeature(displaySession, FEATURES.DASHBOARD);
-      }
-      if (item.key === "StaffManager") {
-        return hasFeature(displaySession, FEATURES.STAFF_MANAGEMENT);
-      }
-      if (item.key === "Branches") {
-        return hasFeature(displaySession, FEATURES.BRANCH_MANAGEMENT);
-      }
-      if (item.key === "GymMembers") {
-        return hasFeature(displaySession, FEATURES.MEMBER_MANAGEMENT);
-      }
-      if (item.key === "Transactions") {
-        return hasFeature(displaySession, FEATURES.BILLING_DASHBOARD);
-      }
-      if (item.key === "RbacAdmin") {
-        return hasFeature(displaySession, FEATURES.RBAC_SETTINGS);
-      }
-      if (item.key === "Expenses") {
-        return hasFeature(displaySession, FEATURES.EXPENSES);
-      }
-      if (item.key === "Settings") {
-        return hasFeature(displaySession, FEATURES.SETTINGS);
-      }
-      return true;
-    });
+    return mainMenuItems
+      .filter((item) => isMainNavItemVisible(item.key as MainNavItemKey, displaySession))
+      .map((item) =>
+        item.key === "Settings"
+          ? {
+              ...item,
+              route: getFirstAccessibleSettingsRoute(displaySession) ?? SETTINGS_DEFAULT_ROUTE
+            }
+          : item
+      );
   }, [displaySession]);
 
   const settingsMenuItemsFiltered = useMemo(() => {
-    return settingsMenuItems.filter((item) => {
-      if (item.key === "settings-rbac") {
-        return hasFeature(displaySession, FEATURES.RBAC_SETTINGS);
-      }
-      return true;
-    });
+    return settingsMenuItems
+      .map((item) => {
+        if (!item.children) {
+          return item;
+        }
+        const children = item.children.filter((child) =>
+          isSettingsNavItemVisible(child.key as SettingsNavItemKey, displaySession)
+        );
+        return { ...item, children };
+      })
+      .filter((item) => !item.children || item.children.length > 0);
   }, [displaySession]);
 
   useEffect(() => {
@@ -186,7 +193,7 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
     const matchedByPathname = routeEntries.find(([, route]) => route === pathname);
     const matchedSettingsFallback =
       pathname === "/pages/settings"
-        ? routeEntries.find(([, route]) => route === "/pages/settings?tab=profile")
+        ? routeEntries.find(([, route]) => route === SETTINGS_ROUTES.profile)
         : undefined;
     const matched = matchedByCurrentRoute ?? matchedByPathname ?? matchedSettingsFallback;
 
@@ -233,7 +240,9 @@ export default function Sidebar({ appBarHeight, onCollapseChange }: SidebarProps
 
   const navigateBackToMain = () => {
     const firstRoute = getFirstAccessibleRoute(displaySession);
-    const nextRoute = firstRoute === "/pages/settings" ? "/pages/dashboard" : firstRoute;
+    const nextRoute = isSettingsPath(firstRoute)
+      ? getFirstAccessibleRouteFromAccess(displaySession)
+      : firstRoute;
     confirmNavigation(() => router.push(nextRoute));
   };
 

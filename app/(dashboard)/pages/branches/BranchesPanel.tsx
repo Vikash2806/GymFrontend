@@ -35,8 +35,9 @@ import { WIDE_MODAL_WIDTH } from "@/utils/modalWidths";
 import type { BranchRow, BranchesListResponse, BranchMutationResponse } from "@/types/branch";
 import { isValidIndianMobile, stripToIndianMobileDigits, toE164IndianMobile } from "@/utils/mobileValidation";
 import { getCityOptions, getCountryOptions, getStateOptions } from "@/utils/options";
-import { useAppDispatch } from "@/redux/hooks";
-import { setSession } from "@/redux/features/auth/authSlice";
+import { useAppDispatch, useAppSelector } from "@/redux/hooks";
+import { selectSession, setSession } from "@/redux/features/auth/authSlice";
+import { FEATURES, hasModuleAction } from "@/utils/permissions";
 import type { SessionPayload } from "@/redux/features/auth/sessionTypes";
 import ExportButton from "@/app/components/Export/ExportButton";
 import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
@@ -123,6 +124,11 @@ export default function BranchesPanel() {
   const { message } = App.useApp();
   const { token } = theme.useToken();
   const dispatch = useAppDispatch();
+  const session = useAppSelector(selectSession);
+  const canCreateBranch = hasModuleAction(session, FEATURES.BRANCH_MANAGEMENT, "create");
+  const canEditBranch = hasModuleAction(session, FEATURES.BRANCH_MANAGEMENT, "edit");
+  const canDeleteBranch = hasModuleAction(session, FEATURES.BRANCH_MANAGEMENT, "delete");
+  const canExportBranches = hasModuleAction(session, FEATURES.BRANCH_MANAGEMENT, "export");
   const [form] = Form.useForm<FormValues>();
 
   const [loading, setLoading] = useState(true);
@@ -425,22 +431,26 @@ export default function BranchesPanel() {
       fixed: "right",
       render: (_, record) => (
         <Space size="small">
-          <Button
-            type="text"
-            icon={<EditOutlined />}
-            aria-label="Edit branch"
-            onClick={() => openEdit(record)}
-            style={{ color: token.colorPrimary }}
-          />
-          <Popconfirm
-            title="Delete this branch?"
-            description="Only allowed when the branch has no members."
-            okText="Delete"
-            okButtonProps={{ danger: true }}
-            onConfirm={() => onDelete(record)}
-          >
-            <Button type="text" danger icon={<DeleteOutlined />} aria-label="Delete branch" />
-          </Popconfirm>
+          {canEditBranch ? (
+            <Button
+              type="text"
+              icon={<EditOutlined />}
+              aria-label="Edit branch"
+              onClick={() => openEdit(record)}
+              style={{ color: token.colorPrimary }}
+            />
+          ) : null}
+          {canDeleteBranch ? (
+            <Popconfirm
+              title="Delete this branch?"
+              description="Only allowed when the branch has no members."
+              okText="Delete"
+              okButtonProps={{ danger: true }}
+              onConfirm={() => onDelete(record)}
+            >
+              <Button type="text" danger icon={<DeleteOutlined />} aria-label="Delete branch" />
+            </Popconfirm>
+          ) : null}
         </Space>
       )
     }
@@ -454,16 +464,20 @@ export default function BranchesPanel() {
             Branches Management
           </Title>
           <Space wrap>
-            <ExportButton endpoint="/gym/exports/branches" defaultFilename="branches.csv" />
-            <Button
-              type="primary"
-              icon={<BankOutlined />}
-              onClick={openCreate}
-              disabled={branchLimitReached}
-              title={branchLimitReached ? "Branch limit reached. Upgrade plan to add more branches." : undefined}
-            >
-              Add Branch
-            </Button>
+            {canExportBranches ? (
+              <ExportButton endpoint="/gym/exports/branches" defaultFilename="branches.csv" />
+            ) : null}
+            {canCreateBranch ? (
+              <Button
+                type="primary"
+                icon={<BankOutlined />}
+                onClick={openCreate}
+                disabled={branchLimitReached}
+                title={branchLimitReached ? "Branch limit reached. Upgrade plan to add more branches." : undefined}
+              >
+                Add Branch
+              </Button>
+            ) : null}
           </Space>
         </Flex>
 

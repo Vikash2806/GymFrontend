@@ -1,5 +1,5 @@
 import type { SessionPayload } from "@/redux/features/auth/sessionTypes";
-import { FEATURES, hasFeature } from "./permissions";
+import { FEATURES, hasModuleAction } from "./permissions";
 
 export type GymMembershipRole = "owner" | "manager" | "staff";
 
@@ -25,7 +25,7 @@ export function gymMembershipRoleFromSession(session: SessionPayload | null): Gy
 }
 
 export function canAccessStaffUsersModule(session: SessionPayload | null): boolean {
-  return hasFeature(session, FEATURES.STAFF_MANAGEMENT);
+  return hasModuleAction(session, FEATURES.STAFF_MANAGEMENT, "view");
 }
 
 export function isOwnerFromSession(session: SessionPayload | null): boolean {

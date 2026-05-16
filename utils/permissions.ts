@@ -1,5 +1,17 @@
 import type { SessionPayload } from "@/redux/features/auth/sessionTypes";
-import type { FeatureKey } from "@/constants/featureMap";
+import { getFirstAccessibleRouteFromAccess } from "@/utils/routeAccess";
+import {
+  canViewMemberPayments,
+  defaultManagerPermissions,
+  defaultStaffPermissions,
+  hasAnyModuleView,
+  hasModulePermission,
+  migrateFlatArraysToNested,
+  permissionsFromUnknown,
+  type ModuleKey,
+  type PermissionAction,
+  type RolePermissionMap
+} from "@/constants/permissionSchema";
 
 export const FEATURES = {
   DASHBOARD: "dashboard",
@@ -7,137 +19,117 @@ export const FEATURES = {
   PACKAGES: "packages",
   MEMBER_MANAGEMENT: "member_management",
   SUBSCRIPTION_MANAGEMENT: "subscription_management",
+  TRANSACTIONS: "transactions",
   BRANCH_MANAGEMENT: "branch_management",
-  BILLING_DASHBOARD: "billing_dashboard",
-  FINANCIAL_OVERVIEW: "financial_overview",
   EXPENSES: "expenses",
   STAFF_MANAGEMENT: "staff_management",
   SETTINGS: "settings",
   GYM_PROFILE: "gym_profile",
+  SUBSCRIPTION_PRICING: "subscription_pricing",
   USER_MANAGEMENT: "user_management",
   RBAC_SETTINGS: "rbac_settings"
 } as const;
 
-// Temporary alias to keep imports stable while pages migrate.
 export const PERMISSIONS = FEATURES;
 
-export type Permission = (typeof FEATURES)[keyof typeof FEATURES] | FeatureKey | string;
+export type Permission = (typeof FEATURES)[keyof typeof FEATURES] | ModuleKey | string;
 
-type GymMembershipRole = "owner" | "manager" | "staff";
+export type { PermissionAction, RolePermissionMap };
 
-function gymRoleFromSession(session: SessionPayload | null): GymMembershipRole | null {
-  if (!session?.user?.defaults?.gymId || !Array.isArray(session.user.associatedGyms)) {
-    return null;
-  }
-  const gymId = session.user.defaults.gymId;
-  const membership = session.user.associatedGyms.find((g) => g.gymId === gymId);
-  const role = membership?.gymRole;
-  if (role === "owner" || role === "manager" || role === "staff") {
-    return role;
-  }
-  return null;
+function resolveRole(session: SessionPayload | null): string {
+  return String(session?.rbac?.role ?? "").toLowerCase();
 }
 
-function fallbackFeaturesByRole(session: SessionPayload | null): FeatureKey[] {
-  const role =
-    session?.rbac?.role?.toLowerCase() === "owner" ||
-    session?.rbac?.role?.toLowerCase() === "manager" ||
-    session?.rbac?.role?.toLowerCase() === "staff"
-      ? (session.rbac.role.toLowerCase() as GymMembershipRole)
-      : gymRoleFromSession(session);
-
-  if (role === "owner") {
-    return Object.values(FEATURES);
-  }
+function fallbackPermissionsByRole(session: SessionPayload | null): RolePermissionMap {
+  const role = resolveRole(session);
   if (role === "manager") {
-    return [
-      FEATURES.DASHBOARD,
-      FEATURES.MEMBERSHIP_PLANS,
-      FEATURES.MEMBER_MANAGEMENT,
-      FEATURES.SUBSCRIPTION_MANAGEMENT,
-      FEATURES.BILLING_DASHBOARD,
-      FEATURES.FINANCIAL_OVERVIEW
-    ];
+    return defaultManagerPermissions();
   }
   if (role === "staff") {
-    return [
-      FEATURES.DASHBOARD,
-      FEATURES.MEMBERSHIP_PLANS,
-      FEATURES.MEMBER_MANAGEMENT,
-      FEATURES.SUBSCRIPTION_MANAGEMENT,
-      FEATURES.BILLING_DASHBOARD
-    ];
+    return defaultStaffPermissions();
   }
-  return [];
+  return {};
 }
 
-export function featuresFromSession(session: SessionPayload | null): FeatureKey[] {
-  const role = String(session?.rbac?.role ?? "").toLowerCase();
+export function permissionsFromSession(session: SessionPayload | null): RolePermissionMap {
+  const role = resolveRole(session);
+  if (role === "owner") {
+    return {};
+  }
+  const raw = session?.rbac?.permissions;
+  if (raw && (Array.isArray(raw) ? raw.length > 0 : Object.keys(raw).length > 0)) {
+    return permissionsFromUnknown(raw, role);
+  }
+  return fallbackPermissionsByRole(session);
+}
+
+/** @deprecated Use permissionsFromSession — kept for gradual migration. */
+export function featuresFromSession(session: SessionPayload | null): string[] {
+  const map = permissionsFromSession(session);
+  const role = resolveRole(session);
   if (role === "owner") {
     return Object.values(FEATURES);
   }
-  const fromRbac = (session?.rbac?.permissions ?? []).map((value) => String(value).trim()).filter(Boolean);
-  if (fromRbac.length > 0) {
-    return [...new Set(fromRbac)] as FeatureKey[];
+  const keys: string[] = [];
+  for (const [module, perm] of Object.entries(map)) {
+    if (!perm) {
+      continue;
+    }
+    if (perm.view) {
+      keys.push(module);
+    }
+    for (const [action, enabled] of Object.entries(perm)) {
+      if (action === "view" || !enabled) {
+        continue;
+      }
+      keys.push(`${module}_${action}`);
+      if (action === "create") {
+        keys.push(`${module}_add`);
+      }
+    }
   }
-  return fallbackFeaturesByRole(session);
-}
-
-// Backward-compatible alias used by current sidebar; now returns feature keys.
-export function permissionsFromSession(session: SessionPayload | null): FeatureKey[] {
-  return featuresFromSession(session);
+  return keys;
 }
 
 export function hasFeature(session: SessionPayload | null, permission: Permission): boolean {
-  const required = String(permission);
-  const features = featuresFromSession(session);
-  if (features.includes(required as FeatureKey)) {
-    return true;
-  }
-  // Backward compatibility with old RBAC snapshots where branches were gated by "settings".
-  if (required === FEATURES.BRANCH_MANAGEMENT && features.includes(FEATURES.SETTINGS as FeatureKey)) {
-    return true;
-  }
-  return false;
+  return hasModuleAction(session, String(permission), "view");
 }
 
 export const hasPermission = hasFeature;
 
-const FEATURE_ROUTE_ORDER: Array<{ feature: FeatureKey; route: string }> = [
-  { feature: FEATURES.MEMBER_MANAGEMENT, route: "/pages/members" },
-  { feature: FEATURES.DASHBOARD, route: "/pages/dashboard" },
-  { feature: FEATURES.BILLING_DASHBOARD, route: "/pages/members" },
-  { feature: FEATURES.EXPENSES, route: "/pages/expenses" },
-  { feature: FEATURES.BRANCH_MANAGEMENT, route: "/pages/branches" },
-  { feature: FEATURES.STAFF_MANAGEMENT, route: "/pages/staff-manager" },
-  { feature: FEATURES.SETTINGS, route: "/pages/settings" },
-  { feature: FEATURES.RBAC_SETTINGS, route: "/admin/rbac" }
-];
-
-export function getFirstAccessibleRoute(session: SessionPayload | null): string {
-  const features = featuresFromSession(session);
-  for (const entry of FEATURE_ROUTE_ORDER) {
-    if (features.includes(entry.feature as FeatureKey)) {
-      return entry.route;
-    }
-  }
-  return "/pages/settings";
+export function canExportModule(session: SessionPayload | null, baseKey: string): boolean {
+  return hasModuleAction(session, baseKey, "export");
 }
 
-type SidebarModule = "members" | "plans" | "subscriptions" | "payments" | "expenses" | "branches" | "staff" | "settings";
+export function hasModuleAction(
+  session: SessionPayload | null,
+  baseKey: string,
+  action: PermissionAction
+): boolean {
+  const role = resolveRole(session);
+  if (role === "owner") {
+    return true;
+  }
+  const permissions = permissionsFromSession(session);
+  return hasModulePermission(permissions, baseKey, action, role);
+}
 
-const MODULE_TO_FEATURE: Record<SidebarModule, FeatureKey> = {
-  members: FEATURES.MEMBER_MANAGEMENT,
-  plans: FEATURES.MEMBERSHIP_PLANS,
-  subscriptions: FEATURES.SUBSCRIPTION_MANAGEMENT,
-  payments: FEATURES.BILLING_DASHBOARD,
-  expenses: FEATURES.EXPENSES,
-  branches: FEATURES.BRANCH_MANAGEMENT,
-  staff: FEATURES.STAFF_MANAGEMENT,
-  settings: FEATURES.SETTINGS
-};
+export function hasAnyModuleViewForSession(session: SessionPayload | null, baseKeys: string[]): boolean {
+  const role = resolveRole(session);
+  if (role === "owner") {
+    return true;
+  }
+  return hasAnyModuleView(permissionsFromSession(session), baseKeys, role);
+}
 
-export function canAccessModule(features: string[], module: SidebarModule): boolean {
-  const required = MODULE_TO_FEATURE[module];
-  return features.includes(required);
+export function canViewMemberPaymentsForSession(session: SessionPayload | null): boolean {
+  const role = resolveRole(session);
+  if (role === "owner") {
+    return true;
+  }
+  return canViewMemberPayments(permissionsFromSession(session), role);
+}
+
+export function getFirstAccessibleRoute(session: SessionPayload | null): string {
+  return getFirstAccessibleRouteFromAccess(session);
 }

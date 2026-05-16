@@ -50,7 +50,7 @@ import { selectSession } from "@/redux/features/auth/authSlice";
 import { stripToIndianMobileDigits } from "@/utils/mobileValidation";
 import { formatInrWhole } from "@/utils/formatCurrency";
 import { stripPlanNamePriceSuffix } from "@/utils/planDisplayName";
-import { FEATURES, hasFeature } from "@/utils/permissions";
+import { FEATURES, hasFeature, hasModuleAction } from "@/utils/permissions";
 import { getCityOptions, getCountryOptions, getStateOptions } from "@/utils/options";
 import { calculateMembershipPaymentSummary, computeMembershipMoneyLines } from "@/utils/membershipPaymentSummary";
 import ExportButton from "@/app/components/Export/ExportButton";
@@ -283,10 +283,17 @@ export default function MembersPanel({
   const { token } = theme.useToken();
   const session = useAppSelector(selectSession);
   const canManageBranches = hasFeature(session, FEATURES.BRANCH_MANAGEMENT);
-  const canCreateMember = hasFeature(session, FEATURES.MEMBER_MANAGEMENT);
-  const canUpdateMember = hasFeature(session, FEATURES.MEMBER_MANAGEMENT);
-  const canDeleteMember = hasFeature(session, FEATURES.MEMBER_MANAGEMENT);
-  const canRecordBillingPayment = hasFeature(session, FEATURES.BILLING_DASHBOARD);
+  const canViewMembers = hasModuleAction(session, FEATURES.MEMBER_MANAGEMENT, "view");
+  const canAddMember = hasModuleAction(session, FEATURES.MEMBER_MANAGEMENT, "create");
+  const canEditMember = hasModuleAction(session, FEATURES.MEMBER_MANAGEMENT, "edit");
+  const canDeleteMember = hasModuleAction(session, FEATURES.MEMBER_MANAGEMENT, "delete");
+  const canImportMembers = hasModuleAction(session, FEATURES.MEMBER_MANAGEMENT, "import");
+  const canExportMembers = hasModuleAction(session, FEATURES.MEMBER_MANAGEMENT, "export");
+  const canAddMembership = hasModuleAction(session, FEATURES.MEMBER_MANAGEMENT, "new_membership");
+  const canEditMembership = hasModuleAction(session, FEATURES.MEMBER_MANAGEMENT, "edit");
+  const canCancelMembership = hasModuleAction(session, FEATURES.MEMBER_MANAGEMENT, "cancel_membership");
+  const canAddPlan = hasModuleAction(session, FEATURES.MEMBERSHIP_PLANS, "create");
+  const canRecordOverduePayment = hasModuleAction(session, FEATURES.MEMBER_MANAGEMENT, "overdue_payment");
   const assignedBranchId = session?.user?.defaults?.branchId ?? "";
   const defaultBranchId = canManageBranches
     ? session?.activeBranch?.id ?? assignedBranchId
@@ -684,10 +691,13 @@ export default function MembersPanel({
   }, [clearDirty, defaultBranchId, effectiveBranchId, form]);
 
   const startCreateMembershipFromMemberModal = () => {
+    if (!canAddPlan || !onRequestCreateMembershipPlan) {
+      return;
+    }
     const rawDraft = form.getFieldsValue(true) as Partial<FormShape>;
     const draft = cloneMemberDraft(rawDraft);
     setModalOpen(false);
-    onRequestCreateMembershipPlan?.(draft);
+    onRequestCreateMembershipPlan(draft);
   };
 
   const openEdit = useCallback(async (record: Member) => {
@@ -1019,9 +1029,9 @@ export default function MembersPanel({
       const menuItemStyle: React.CSSProperties = { fontSize: 15, lineHeight: 1.35, minHeight: 40, paddingBlock: 10 };
       const totalPending = record.financialSummary?.lifetime?.totalPending ?? 0;
       const newMembershipDisabled =
-        !canCreateMember || record.currentSubscription?.status === "active";
+        !canAddMembership || record.currentSubscription?.status === "active";
       const overdueItem =
-        canRecordBillingPayment && totalPending > 0
+        canRecordOverduePayment && totalPending > 0
           ? [
               {
                 key: "overdue",
@@ -1035,70 +1045,90 @@ export default function MembersPanel({
             ]
           : [];
       return [
-        {
-          key: "newMembership",
-          label: "New membership",
-          icon: <PlusOutlined />,
-          style: menuItemStyle,
-          disabled: newMembershipDisabled,
-          onClick: () => {
-            if (!newMembershipDisabled) {
-              openNewMembership(record);
-            }
-          }
-        },
-        {
-          key: "view",
-          label: "View Details",
-          icon: <EyeOutlined />,
-          style: menuItemStyle,
-          onClick: () => {
-            void openView(record);
-          }
-        },
-        ...overdueItem,
-        {
-          key: "edit",
-          label: "Edit",
-          icon: <EditOutlined />,
-          style: menuItemStyle,
-          disabled: !canUpdateMember,
-          onClick: () => {
-            void openEdit(record);
-          }
-        },
-        {
-          key: "cancel",
-          label: "Cancel Membership",
-          icon: <CloseCircleOutlined />,
-          style: menuItemStyle,
-          danger: true,
-          disabled: !record.currentSubscription,
-          onClick: () => {
-            openCancelMembershipModal(record);
-          }
-        },
-        {
-          key: "delete",
-          label: "Delete",
-          icon: <DeleteOutlined />,
-          style: menuItemStyle,
-          danger: true,
-          disabled: !canDeleteMember,
-          onClick: () => {
-            modal.confirm({
-              title: "Delete this member?",
-              okText: "Delete",
-              okButtonProps: { danger: true },
-              onOk: async () => {
-                await handleDelete(record);
+        canAddMembership
+          ? {
+              key: "newMembership",
+              label: "New membership",
+              icon: <PlusOutlined />,
+              style: menuItemStyle,
+              disabled: newMembershipDisabled,
+              onClick: () => {
+                if (!newMembershipDisabled) {
+                  openNewMembership(record);
+                }
               }
-            });
-          }
-        }
-      ];
+            }
+          : null,
+        canViewMembers
+          ? {
+              key: "view",
+              label: "View Details",
+              icon: <EyeOutlined />,
+              style: menuItemStyle,
+              onClick: () => {
+                void openView(record);
+              }
+            }
+          : null,
+        ...overdueItem,
+        canEditMember
+          ? {
+              key: "edit",
+              label: "Edit",
+              icon: <EditOutlined />,
+              style: menuItemStyle,
+              onClick: () => {
+                void openEdit(record);
+              }
+            }
+          : null,
+        canCancelMembership && record.currentSubscription
+          ? {
+              key: "cancel",
+              label: "Cancel Membership",
+              icon: <CloseCircleOutlined />,
+              style: menuItemStyle,
+              danger: true,
+              onClick: () => {
+                openCancelMembershipModal(record);
+              }
+            }
+          : null,
+        canDeleteMember
+          ? {
+              key: "delete",
+              label: "Delete",
+              icon: <DeleteOutlined />,
+              style: menuItemStyle,
+              danger: true,
+              onClick: () => {
+                modal.confirm({
+                  title: "Delete this member?",
+                  okText: "Delete",
+                  okButtonProps: { danger: true },
+                  onOk: async () => {
+                    await handleDelete(record);
+                  }
+                });
+              }
+            }
+          : null
+      ].filter(Boolean);
     },
-    [canCreateMember, canRecordBillingPayment, canUpdateMember, canDeleteMember, modal, openView, openNewMembership, openEdit, handleDelete]
+    [
+      canAddMembership,
+      canViewMembers,
+      canRecordOverduePayment,
+      canEditMember,
+      canCancelMembership,
+      canEditMembership,
+      canDeleteMember,
+      modal,
+      openView,
+      openNewMembership,
+      openEdit,
+      handleDelete
+    ]
   );
 
   const onSubmit = async () => {
@@ -1606,33 +1636,39 @@ export default function MembersPanel({
           >
             <Button>Manage Columns</Button>
           </Dropdown>
-          <ExportButton
-            endpoint="/gym/exports/members"
-            params={{
-              branchId: effectiveBranchId || undefined,
-              ...(memberListFilter === "overdue"
-                ? { pendingPayment: "true" }
-                : memberListFilter !== "all"
-                  ? { status: memberListFilter }
-                  : {}),
-              search: nameSearch.trim() || undefined
-            }}
-            defaultFilename="members.csv"
-            disabled={!effectiveBranchId}
-          />
-          <Button onClick={openImportModal} disabled={!canCreateMember || !effectiveBranchId}>
-            Import members
-          </Button>
-          <Tooltip title={memberLimitReached ? "Member limit reached. Upgrade plan to add more members." : ""}>
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={() => openCreate()}
-              disabled={!canCreateMember || memberLimitReached}
-            >
-              Add member
+          {canExportMembers ? (
+            <ExportButton
+              endpoint="/gym/exports/members"
+              params={{
+                branchId: effectiveBranchId || undefined,
+                ...(memberListFilter === "overdue"
+                  ? { pendingPayment: "true" }
+                  : memberListFilter !== "all"
+                    ? { status: memberListFilter }
+                    : {}),
+                search: nameSearch.trim() || undefined
+              }}
+              defaultFilename="members.csv"
+              disabled={!effectiveBranchId}
+            />
+          ) : null}
+          {canImportMembers ? (
+            <Button onClick={openImportModal} disabled={!effectiveBranchId}>
+              Import members
             </Button>
-          </Tooltip>
+          ) : null}
+          {canAddMember ? (
+            <Tooltip title={memberLimitReached ? "Member limit reached. Upgrade plan to add more members." : ""}>
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => openCreate()}
+                disabled={memberLimitReached}
+              >
+                Add member
+              </Button>
+            </Tooltip>
+          ) : null}
         </Space>
       </div>
 
@@ -1642,7 +1678,6 @@ export default function MembersPanel({
         columns={visibleColumns}
         dataSource={members}
         components={tableComponents}
-        rowSelection={{ type: "checkbox" }}
         pagination={{
           current: membersPage,
           pageSize: membersPageSize,
@@ -2106,7 +2141,7 @@ export default function MembersPanel({
                               }
                             }}
                             notFoundContent={
-                              planOptions.length ? undefined : (
+                              planOptions.length || !canAddPlan || !onRequestCreateMembershipPlan ? undefined : (
                                 <Button type="link" onClick={() => startCreateMembershipFromMemberModal()} style={{ padding: 0 }}>
                                   Add membership plan
                                 </Button>

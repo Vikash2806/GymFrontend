@@ -8,6 +8,9 @@ import { formatInrWhole } from "@/utils/formatCurrency";
 import { stripPlanNamePriceSuffix } from "@/utils/planDisplayName";
 import type { Member } from "@/types/member";
 import apiClient from "@/utils/api";
+import { useAppSelector } from "@/redux/hooks";
+import { selectSession } from "@/redux/features/auth/authSlice";
+import { canViewMemberPaymentsForSession } from "@/utils/permissions";
 import type { ColumnsType } from "antd/es/table";
 import styles from "./MemberDetailsModal.module.css";
 
@@ -104,6 +107,8 @@ function ageFromDob(iso: string | null): string {
 
 export default function MemberDetailsModal({ open, member, onClose }: MemberDetailsModalProps) {
   const { token } = theme.useToken();
+  const session = useAppSelector(selectSession);
+  const canViewMemberTransactions = canViewMemberPaymentsForSession(session);
   // Show stored payment lines only; recomputing from Math.max(planAmount, totalAmount, listPrice) could treat subtotal/list as plan and double-count trainer fees.
   const currentPayment = member?.currentSubscription?.payment ?? null;
   const [activeTab, setActiveTab] = useState<"details" | "history" | "transactions">("details");
@@ -196,6 +201,12 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
     setHistoryPage(1);
     setPaymentsPage(1);
   }, [open, member?._id]);
+
+  useEffect(() => {
+    if (activeTab === "transactions" && !canViewMemberTransactions) {
+      setActiveTab("details");
+    }
+  }, [activeTab, canViewMemberTransactions]);
 
   useEffect(() => {
     if (!open || !member || activeTab !== "history") {
@@ -299,7 +310,13 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
 
           <Tabs
             activeKey={activeTab}
-            onChange={(key) => setActiveTab((key as "details" | "history" | "transactions") ?? "details")}
+            onChange={(key) => {
+              const next = (key as "details" | "history" | "transactions") ?? "details";
+              if (next === "transactions" && !canViewMemberTransactions) {
+                return;
+              }
+              setActiveTab(next);
+            }}
             items={[
               {
                 key: "details",
@@ -368,9 +385,11 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
                   </div>
                 )
               },
-              {
-                key: "transactions",
-                label: "Transactions",
+              ...(canViewMemberTransactions
+                ? [
+                    {
+                      key: "transactions",
+                      label: "Transactions",
                 children: (
                   <div style={{ marginTop: 4 }}>
                     {paymentsLoading ? <Text type="secondary">Loading transactions...</Text> : payments.length === 0 ? <Text type="secondary">No transactions found.</Text> : (
@@ -383,7 +402,9 @@ export default function MemberDetailsModal({ open, member, onClose }: MemberDeta
                     )}
                   </div>
                 )
-              }
+                    }
+                  ]
+                : [])
             ]}
           />
         </div>

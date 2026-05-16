@@ -38,6 +38,7 @@ import type {
 } from "@/types/expense";
 import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
+import { FEATURES, hasModuleAction } from "@/utils/permissions";
 import { formatInr } from "@/utils/formatCurrency";
 import ExportButton from "@/app/components/Export/ExportButton";
 import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
@@ -78,6 +79,10 @@ export default function ExpensesPanel() {
   const { token } = theme.useToken();
   const session = useAppSelector(selectSession);
   const defaultBranchId = session?.activeBranch?.id ?? session?.user?.defaults?.branchId ?? "";
+  const canAddExpense = hasModuleAction(session, FEATURES.EXPENSES, "create");
+  const canEditExpense = hasModuleAction(session, FEATURES.EXPENSES, "edit");
+  const canDeleteExpense = hasModuleAction(session, FEATURES.EXPENSES, "delete");
+  const canExportExpenses = hasModuleAction(session, FEATURES.EXPENSES, "export");
 
   const [activeTab, setActiveTab] = useState("expenses");
   const initialFilters: ExpenseFilters = useMemo(
@@ -141,14 +146,12 @@ export default function ExpensesPanel() {
 
   const watchedCategoryId = Form.useWatch("categoryId", expenseForm);
   const [showEmployeeDetailsToggle, setShowEmployeeDetailsToggle] = useState(false);
-  const [listBranchUsersToggle, setListBranchUsersToggle] = useState(false);
   const [mandatoryUserToggle, setMandatoryUserToggle] = useState(false);
   const selectedCategory = useMemo(
     () => categories.find((category) => category.id === watchedCategoryId) ?? null,
     [categories, watchedCategoryId]
   );
   const showEmployeeSection = selectedCategory?.showEmployeeDetails === true;
-  const useBranchUserSelection = selectedCategory?.showEmployeeDetails === true && selectedCategory?.listBranchUsers === true;
   const isEmployeeDetailsMandatory = selectedCategory?.showEmployeeDetails === true && selectedCategory?.mandatory === true;
 
   const categoryOptions = useMemo(
@@ -352,10 +355,10 @@ export default function ExpensesPanel() {
   }, [loadEmployees]);
 
   useEffect(() => {
-    if (expenseDrawerOpen && useBranchUserSelection && !employeesLoadedOnce && !employeesLoading) {
+    if (expenseDrawerOpen && showEmployeeSection && !employeesLoadedOnce && !employeesLoading) {
       void loadEmployees();
     }
-  }, [expenseDrawerOpen, useBranchUserSelection, employeesLoadedOnce, employeesLoading, loadEmployees]);
+  }, [expenseDrawerOpen, showEmployeeSection, employeesLoadedOnce, employeesLoading, loadEmployees]);
 
   useEffect(() => {
     if (!filtersHydrated) {
@@ -434,17 +437,11 @@ export default function ExpensesPanel() {
     }
     const currentCategory = categories.find((category) => category.id === currentCategoryId);
     const currentShowEmployeeSection = currentCategory?.showEmployeeDetails === true;
-    const currentUseBranchUserSelection =
-      currentCategory?.showEmployeeDetails === true && currentCategory?.listBranchUsers === true;
     if (!currentShowEmployeeSection) {
       expenseForm.setFieldsValue({ employeeUserId: undefined, employeeName: undefined });
       return;
     }
-    if (currentUseBranchUserSelection) {
-      expenseForm.setFieldsValue({ employeeName: undefined });
-      return;
-    }
-    expenseForm.setFieldsValue({ employeeUserId: undefined });
+    expenseForm.setFieldsValue({ employeeName: undefined });
   }, [expenseDrawerOpen, watchedCategoryId, categories, expenseForm]);
 
   const submitExpense = async () => {
@@ -456,7 +453,7 @@ export default function ExpensesPanel() {
       const v = await expenseForm.validateFields();
       setExpenseSubmitting(true);
       const selectedEmployeeUserId = v.employeeUserId ?? null;
-      const selectedEmployeeName = useBranchUserSelection ? "" : (v.employeeName?.trim() ?? "");
+      const selectedEmployeeName = showEmployeeSection ? "" : (v.employeeName?.trim() ?? "");
       const payload: Record<string, unknown> = {
         branchId: defaultBranchId,
         employeeUserId: selectedEmployeeUserId,
@@ -569,7 +566,6 @@ export default function ExpensesPanel() {
         description: editingCategory.description
       });
       setShowEmployeeDetailsToggle(editingCategory.showEmployeeDetails === true);
-      setListBranchUsersToggle(editingCategory.listBranchUsers === true);
       setMandatoryUserToggle(editingCategory.mandatory === true);
       return;
     }
@@ -578,7 +574,6 @@ export default function ExpensesPanel() {
       description: ""
     });
     setShowEmployeeDetailsToggle(false);
-    setListBranchUsersToggle(false);
     setMandatoryUserToggle(false);
   }, [categoryDrawerOpen, editingCategory, categoryForm]);
 
@@ -590,7 +585,7 @@ export default function ExpensesPanel() {
         name: formValues.name,
         description: formValues.description ?? "",
         showEmployeeDetails: showEmployeeDetailsToggle === true,
-        listBranchUsers: showEmployeeDetailsToggle === true && listBranchUsersToggle === true,
+        listBranchUsers: showEmployeeDetailsToggle === true,
         mandatory: showEmployeeDetailsToggle === true && mandatoryUserToggle === true
       };
       setCategorySubmitting(true);
@@ -735,30 +730,36 @@ export default function ExpensesPanel() {
           <Space>
             {row.status === "deleted" ? (
               <Text type="secondary">—</Text>
+            ) : !canEditExpense && !canDeleteExpense ? (
+              <Text type="secondary">—</Text>
             ) : (
               <>
-                <Button
-                  type="link"
-                  size="small"
-                  icon={<EditOutlined />}
-                  aria-label="Edit expense"
-                  onClick={() => openEditExpense(row)}
-                />
-                <Button
-                  type="link"
-                  size="small"
-                  danger
-                  icon={<DeleteOutlined />}
-                  aria-label="Delete expense"
-                  onClick={() => confirmDeleteExpense(row)}
-                />
+                {canEditExpense ? (
+                  <Button
+                    type="link"
+                    size="small"
+                    icon={<EditOutlined />}
+                    aria-label="Edit expense"
+                    onClick={() => openEditExpense(row)}
+                  />
+                ) : null}
+                {canDeleteExpense ? (
+                  <Button
+                    type="link"
+                    size="small"
+                    danger
+                    icon={<DeleteOutlined />}
+                    aria-label="Delete expense"
+                    onClick={() => confirmDeleteExpense(row)}
+                  />
+                ) : null}
               </>
             )}
           </Space>
         )
       }
     ],
-    [openEditExpense, confirmDeleteExpense]
+    [canDeleteExpense, canEditExpense, openEditExpense, confirmDeleteExpense]
   );
 
   const visibleExpenseColumns = useMemo(
@@ -791,7 +792,7 @@ export default function ExpensesPanel() {
       title: "Employee details",
       key: "employeeSettings",
       render: (_, row) =>
-        row.showEmployeeDetails ? `Enabled${row.mandatory ? " • Mandatory" : ""}${row.listBranchUsers ? " • Branch users" : ""}` : "Disabled"
+        row.showEmployeeDetails ? `Enabled${row.mandatory ? " • Mandatory" : ""} • Active branch staff` : "Disabled"
     },
     { title: "Description", dataIndex: "description", key: "description", ellipsis: true },
     {
@@ -800,12 +801,17 @@ export default function ExpensesPanel() {
       width: 140,
       render: (_, row) => (
         <Space>
-          <Button type="link" size="small" onClick={() => openEditCategory(row)}>
-            Edit
-          </Button>
-          <Button type="link" size="small" danger onClick={() => confirmDeleteCategory(row)}>
-            Delete
-          </Button>
+          {canEditExpense ? (
+            <Button type="link" size="small" onClick={() => openEditCategory(row)}>
+              Edit
+            </Button>
+          ) : null}
+          {canDeleteExpense ? (
+            <Button type="link" size="small" danger onClick={() => confirmDeleteCategory(row)}>
+              Delete
+            </Button>
+          ) : null}
+          {!canEditExpense && !canDeleteExpense ? <Text type="secondary">—</Text> : null}
         </Space>
       )
     }
@@ -963,20 +969,24 @@ export default function ExpensesPanel() {
                         </span>
                       ) : null}
                     </Button>
-                    <ExportButton
-                      endpoint="/gym/exports/expenses"
-                      params={buildExpenseQueryParams(true)}
-                      defaultFilename="expenses.csv"
-                    />
-                    <Button
-                      type="primary"
-                      icon={<PlusOutlined />}
-                      onClick={openAddExpense}
-                      disabled={expenseLimitReached}
-                      title={expenseLimitReached ? "Expense limit reached. Upgrade plan to add more expenses." : undefined}
-                    >
-                      Add expense
-                    </Button>
+                    {canExportExpenses ? (
+                      <ExportButton
+                        endpoint="/gym/exports/expenses"
+                        params={buildExpenseQueryParams(true)}
+                        defaultFilename="expenses.csv"
+                      />
+                    ) : null}
+                    {canAddExpense ? (
+                      <Button
+                        type="primary"
+                        icon={<PlusOutlined />}
+                        onClick={openAddExpense}
+                        disabled={expenseLimitReached}
+                        title={expenseLimitReached ? "Expense limit reached. Upgrade plan to add more expenses." : undefined}
+                      >
+                        Add expense
+                      </Button>
+                    ) : null}
                   </Space>
                 </div>
                 <div style={{ marginBottom: 16 }}>
@@ -1093,9 +1103,11 @@ export default function ExpensesPanel() {
             children: (
               <>
                 <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16, gap: 12 }}>
-                  <Button type="primary" icon={<PlusOutlined />} onClick={openAddCategory}>
-                    Add category
-                  </Button>
+                  {canAddExpense ? (
+                    <Button type="primary" icon={<PlusOutlined />} onClick={openAddCategory}>
+                      Add category
+                    </Button>
+                  ) : null}
                 </div>
                 <Table<ExpenseCategory>
                   rowKey="id"
@@ -1190,41 +1202,34 @@ export default function ExpensesPanel() {
                 <>
                   {menu}
                   <div style={{ padding: 8 }}>
-                    <Button type="link" icon={<PlusOutlined />} onClick={openAddCategoryFromExpenseDrawer}>
-                      Add category
-                    </Button>
+                    {canAddExpense ? (
+                      <Button type="link" icon={<PlusOutlined />} onClick={openAddCategoryFromExpenseDrawer}>
+                        Add category
+                      </Button>
+                    ) : null}
                   </div>
                 </>
               )}
             />
           </Form.Item>
           {showEmployeeSection ? (
-            useBranchUserSelection ? (
-              <Form.Item
-                name="employeeUserId"
-                label="Select staff/manager"
-                rules={isEmployeeDetailsMandatory ? [{ required: true, message: "Select staff/manager" }] : undefined}
-              >
-                <Select
-                  showSearch
-                  optionFilterProp="label"
-                  options={[
-                    { value: GENERAL_EMPLOYEE_OPTION_VALUE, label: "General (Temporary / Dummy)" },
-                    ...drawerEmployeeOptions
-                  ]}
-                  loading={employeesLoading}
-                  placeholder={employeeOptions.length ? "Select staff/manager" : "No staff/manager found for this branch"}
-                />
-              </Form.Item>
-            ) : (
-              <Form.Item
-                name="employeeName"
-                label="Employee / Person"
-                rules={isEmployeeDetailsMandatory ? [{ required: true, message: "Enter employee/person name" }] : undefined}
-              >
-                <Input placeholder="Type name (e.g. Guest trainer, Cleaner, etc.)" />
-              </Form.Item>
-            )
+            <Form.Item
+              name="employeeUserId"
+              label="Select staff/manager"
+              extra="Staff are listed for the active branch. Switch branch in the header to pick staff from another branch."
+              rules={isEmployeeDetailsMandatory ? [{ required: true, message: "Select staff/manager" }] : undefined}
+            >
+              <Select
+                showSearch
+                optionFilterProp="label"
+                options={[
+                  { value: GENERAL_EMPLOYEE_OPTION_VALUE, label: "General (Temporary / Dummy)" },
+                  ...drawerEmployeeOptions
+                ]}
+                loading={employeesLoading}
+                placeholder={employeeOptions.length ? "Select staff/manager" : "No staff/manager found for this branch"}
+              />
+            </Form.Item>
           ) : null}
           <Form.Item
             name="amount"
@@ -1318,23 +1323,11 @@ export default function ExpensesPanel() {
                   setCategoryDrawerDirty(true);
                   setDirty("expenses-category-drawer", true);
                   if (!checked) {
-                    setListBranchUsersToggle(false);
                     setMandatoryUserToggle(false);
                   }
                 }}
               >
                 Show employees details
-              </Checkbox>
-              <Checkbox
-                checked={listBranchUsersToggle}
-                disabled={!showEmployeeDetailsToggle}
-                onChange={(event) => {
-                  setListBranchUsersToggle(event.target.checked);
-                  setCategoryDrawerDirty(true);
-                  setDirty("expenses-category-drawer", true);
-                }}
-              >
-                List users of current branch
               </Checkbox>
               <Checkbox
                 checked={mandatoryUserToggle}

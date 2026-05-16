@@ -24,6 +24,7 @@ import { WIDE_MODAL_WIDTH } from "@/utils/modalWidths";
 import type { MembershipPlan, MembershipPlanInput } from "@/types/membership";
 import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
+import { FEATURES, hasModuleAction } from "@/utils/permissions";
 import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
 
 const { TextArea } = Input;
@@ -57,6 +58,9 @@ export default function MembershipPlansPanel({
   const { token } = theme.useToken();
   const session = useAppSelector(selectSession);
   const branchId = session?.activeBranch?.id ?? session?.user?.defaults?.branchId ?? "";
+  const canAddPlan = hasModuleAction(session, FEATURES.MEMBERSHIP_PLANS, "create");
+  const canEditPlan = hasModuleAction(session, FEATURES.MEMBERSHIP_PLANS, "edit");
+  const canDeletePlan = hasModuleAction(session, FEATURES.MEMBERSHIP_PLANS, "delete");
 
   const [loading, setLoading] = useState(false);
   const [plans, setPlans] = useState<MembershipPlan[]>([]);
@@ -113,6 +117,9 @@ export default function MembershipPlansPanel({
   }, [createRequestId]);
 
   const openCreate = () => {
+    if (!canAddPlan) {
+      return;
+    }
     if (!branchId) {
       message.warning("Select a branch in the header first.");
       return;
@@ -134,6 +141,9 @@ export default function MembershipPlansPanel({
   };
 
   const openEdit = useCallback((record: MembershipPlan) => {
+    if (!canEditPlan) {
+      return;
+    }
     setEditing(record);
     form.setFieldsValue({
       branchId: record.branchId || branchId,
@@ -147,7 +157,7 @@ export default function MembershipPlansPanel({
     setModalOpen(true);
     setModalDirty(false);
     clearDirty("membership-plan-modal");
-  }, [branchId, form, clearDirty]);
+  }, [branchId, canEditPlan, form, clearDirty]);
 
   const closeModal = () => {
     setModalOpen(false);
@@ -295,31 +305,44 @@ export default function MembershipPlansPanel({
         key: "description",
         ellipsis: true
       },
-      {
-        title: "Actions",
-        key: "actions",
-        width: 100,
-        fixed: "right",
-        render: (_, record) => (
-          <Space size="small">
-            <Tooltip title="Edit">
-              <Button type="text" icon={<EditOutlined />} onClick={() => openEdit(record)} aria-label="Edit plan" />
-            </Tooltip>
-            <Popconfirm
-              title="Delete this plan?"
-              okText="Delete"
-              okButtonProps={{ danger: true }}
-              onConfirm={() => void onDelete(record)}
-            >
-              <Tooltip title="Delete">
-                <Button type="text" danger icon={<DeleteOutlined />} aria-label="Delete plan" />
-              </Tooltip>
-            </Popconfirm>
-          </Space>
-        )
-      }
+      ...(canEditPlan || canDeletePlan
+        ? [
+            {
+              title: "Actions",
+              key: "actions",
+              width: 100,
+              fixed: "right" as const,
+              render: (_: unknown, record: MembershipPlan) => (
+                <Space size="small">
+                  {canEditPlan ? (
+                    <Tooltip title="Edit">
+                      <Button
+                        type="text"
+                        icon={<EditOutlined />}
+                        onClick={() => openEdit(record)}
+                        aria-label="Edit plan"
+                      />
+                    </Tooltip>
+                  ) : null}
+                  {canDeletePlan ? (
+                    <Popconfirm
+                      title="Delete this plan?"
+                      okText="Delete"
+                      okButtonProps={{ danger: true }}
+                      onConfirm={() => void onDelete(record)}
+                    >
+                      <Tooltip title="Delete">
+                        <Button type="text" danger icon={<DeleteOutlined />} aria-label="Delete plan" />
+                      </Tooltip>
+                    </Popconfirm>
+                  ) : null}
+                </Space>
+              )
+            }
+          ]
+        : [])
     ],
-    [token.colorSuccess, token.colorTextSecondary, openEdit, onDelete]
+    [token.colorSuccess, token.colorTextSecondary, canDeletePlan, canEditPlan, openEdit, onDelete]
   );
 
   return (
@@ -335,11 +358,13 @@ export default function MembershipPlansPanel({
         }}
       >
         <Title level={4} style={{ margin: 0 }}>
-          Memberships
+          Membership Plans
         </Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} disabled={!branchId}>
-          Create Membership
-        </Button>
+        {canAddPlan ? (
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} disabled={!branchId}>
+            Create plan
+          </Button>
+        ) : null}
       </div>
 
       <Table<MembershipPlan>

@@ -9,6 +9,7 @@ import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
 import { UnsavedChangesProvider, useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
 import { DiscardChangesModal } from "@/app/components/common/DiscardChangesModal";
+import DashboardRouteGuard from "@/app/components/Auth/DashboardRouteGuard";
 
 type Props = {
   children: React.ReactNode;
@@ -113,7 +114,7 @@ const DashboardLayout: React.FC<Props> = ({ children }) => {
                 height: "100%"
               }}
             >
-              {children}
+              <DashboardRouteGuard>{children}</DashboardRouteGuard>
             </Layout.Content>
           </Layout>
         </Layout>

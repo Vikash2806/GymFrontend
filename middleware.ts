@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 const AUTH_COOKIE_NAME = "gym_access_token";
 const LEGACY_AUTH_COOKIE_NAME = "token";
-const PROTECTED_PREFIXES = ["/pages"];
+const PROTECTED_PREFIXES = ["/pages", "/admin"];
 const AUTH_PAGES = new Set(["/login", "/signup"]);
 
 function isProtectedPath(pathname: string): boolean {
@@ -34,6 +34,7 @@ export function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     "/pages/:path*",
+    "/admin/:path*",
     "/dashboard/:path*",
     "/transactions/:path*",
     "/members/:path*",

@@ -3,7 +3,7 @@
 import React from "react";
 import dynamic from "next/dynamic";
 import { Card, Spin } from "antd";
-import RbacPermissionGuard from "@/app/components/Auth/RbacPermissionGuard";
+import RbacModuleGuard from "@/app/components/Auth/RbacModuleGuard";
 import { FEATURES } from "@/utils/permissions";
 
 const TransactionsPanel = dynamic(() => import("./TransactionsPanel"), {
@@ -18,11 +18,10 @@ const TransactionsPanel = dynamic(() => import("./TransactionsPanel"), {
 
 export default function TransactionsPage() {
   return (
-    <RbacPermissionGuard permission={FEATURES.BILLING_DASHBOARD}>
+    <RbacModuleGuard anyViewOf={[FEATURES.MEMBER_MANAGEMENT, FEATURES.TRANSACTIONS]}>
       <Card styles={{ body: { paddingTop: 16 } }}>
         <TransactionsPanel />
       </Card>
-    </RbacPermissionGuard>
+    </RbacModuleGuard>
   );
 }
-

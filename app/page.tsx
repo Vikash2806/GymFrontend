@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, MotionConfig } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -1637,6 +1637,12 @@ const StickyCtaBar = () => {
 };
 
 export default function FitForgeLandingPage() {
+  const [motionEnabled, setMotionEnabled] = useState(false);
+
+  useEffect(() => {
+    setMotionEnabled(true);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -1667,20 +1673,22 @@ export default function FitForgeLandingPage() {
   }, []);
 
   return (
-    <div className="fitforge-landing min-h-screen bg-background text-foreground">
-      <Navbar />
-      <Hero />
-      <SocialProof />
-      <Features />
-      <ProductDemo />
-      <ProblemSolution />
-      <Benefits />
-      <Pricing />
-      <FAQ />
-      <CTA />
-      <Footer />
-      <StickyCtaBar />
-    </div>
+    <MotionConfig reducedMotion={motionEnabled ? "user" : "always"}>
+      <div className="fitforge-landing min-h-screen bg-background text-foreground">
+        <Navbar />
+        <Hero />
+        <SocialProof />
+        <Features />
+        <ProductDemo />
+        <ProblemSolution />
+        <Benefits />
+        <Pricing />
+        <FAQ />
+        <CTA />
+        <Footer />
+        <StickyCtaBar />
+      </div>
+    </MotionConfig>
   );
 }
 

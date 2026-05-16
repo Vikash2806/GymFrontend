@@ -1,3 +1,5 @@
+import type { RolePermissionMap } from "@/constants/permissionSchema";
+
 export type SessionAssociatedGym = {
   gymId: string;
   gymRole?: "owner" | "manager" | "staff";
@@ -38,7 +40,7 @@ export type SessionPayload = {
   activeBranch: SessionGymBranch | null;
   rbac?: {
     role: string;
-    permissions: string[];
+    permissions: RolePermissionMap | string[];
   } | null;
 };
 

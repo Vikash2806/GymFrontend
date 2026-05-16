@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { App, Button, Dropdown } from "antd";
 import { DownOutlined, DownloadOutlined } from "@ant-design/icons";
+import axios from "axios";
 import apiClient from "@/utils/api";
 
 type ExportFormat = "csv" | "xlsx";
@@ -43,6 +44,23 @@ function fallbackFilename(defaultFilename: string, format: ExportFormat): string
     return defaultFilename.replace(/\.(csv|xlsx)$/i, `.${format}`);
   }
   return `${defaultFilename}.${format}`;
+}
+
+async function readApiErrorMessage(data: unknown): Promise<string | undefined> {
+  if (data instanceof Blob) {
+    try {
+      const text = await data.text();
+      const parsed = JSON.parse(text) as { message?: string };
+      return typeof parsed.message === "string" ? parsed.message : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  if (data && typeof data === "object" && "message" in data) {
+    const message = (data as { message?: unknown }).message;
+    return typeof message === "string" ? message : undefined;
+  }
+  return undefined;
 }
 
 export default function ExportButton({
@@ -89,18 +107,18 @@ export default function ExportButton({
       triggerDownload(response.data, filename);
       message.success("Export downloaded.");
     } catch (error: unknown) {
-      const status =
-        error && typeof error === "object" && "response" in error
-          ? (error as { response?: { status?: number; data?: { message?: string } } }).response?.status
-          : undefined;
-      const serverMessage =
-        error && typeof error === "object" && "response" in error
-          ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
-          : undefined;
-      if (status === 404) {
-        message.error(serverMessage ?? "Export endpoint not found. Refresh and try again.");
+      if (axios.isAxiosError(error) && error.response) {
+        const status = error.response.status;
+        const serverMessage = await readApiErrorMessage(error.response.data);
+        if (status === 404) {
+          message.error(serverMessage ?? "Export endpoint not found. Restart the API server and try again.");
+        } else if (status === 403) {
+          message.error(serverMessage ?? "You do not have permission to export this data.");
+        } else {
+          message.error(serverMessage ?? "Export failed.");
+        }
       } else {
-        message.error(serverMessage ?? "Export failed.");
+        message.error("Export failed.");
       }
     } finally {
       setLoading(false);

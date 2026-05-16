@@ -1,6 +1,7 @@
 import { createAsyncThunk, createSlice } from "@reduxjs/toolkit";
 import axios from "axios";
 import apiClient from "@/utils/api";
+import { clearAuthOnLogout } from "@/utils/authSession";
 import { isValidIndianMobile, toE164IndianMobile } from "@/utils/mobileValidation";
 import type {
   LegacyUserData,
@@ -236,14 +237,7 @@ export const signupAsync = createAsyncThunk<SessionPayload, SignupPayload>(
 );
 
 export const logoutAsync = createAsyncThunk("users/logout", async () => {
-  const useMockAuth = isMockAuthEnabled();
-  if (!useMockAuth) {
-    try {
-      await apiClient.post("/auth/logout");
-  } catch {
-    // Local auth state is still cleared in fulfilled reducer.
-  }
-  }
+  void clearAuthOnLogout();
   return true;
 });
 

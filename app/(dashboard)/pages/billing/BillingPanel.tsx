@@ -9,6 +9,7 @@ import apiClient from "@/utils/api";
 import { formatInr } from "@/utils/formatCurrency";
 import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
+import { FEATURES, hasModuleAction } from "@/utils/permissions";
 import ExportButton from "@/app/components/Export/ExportButton";
 import OverduePaymentModal from "@/app/components/payments/OverduePaymentModal";
 
@@ -51,6 +52,8 @@ export default function BillingPanel() {
   const { message } = App.useApp();
   const { token } = theme.useToken();
   const session = useAppSelector(selectSession);
+  const canExportMembers = hasModuleAction(session, FEATURES.MEMBER_MANAGEMENT, "export");
+  const canRecordOverduePayment = hasModuleAction(session, FEATURES.MEMBER_MANAGEMENT, "overdue_payment");
   const defaultBranchId = session?.activeBranch?.id ?? session?.user?.defaults?.branchId ?? "";
 
   const [loading, setLoading] = useState(false);
@@ -209,14 +212,28 @@ export default function BillingPanel() {
         key: "actions",
         width: 160,
         fixed: "right" as const,
-        render: (_, record) => (
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => openPay(record)} disabled={!record.canAddPayment}>
-            Add Payment
-          </Button>
-        )
+        render: (_, record) =>
+          canRecordOverduePayment ? (
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => openPay(record)}
+              disabled={!record.canAddPayment}
+            >
+              Add Payment
+            </Button>
+          ) : null
       }
     ],
-    [branchCodeById, openPay, token.colorError, token.colorText, token.colorTextSecondary, token.colorWarning]
+    [
+      branchCodeById,
+      canRecordOverduePayment,
+      openPay,
+      token.colorError,
+      token.colorText,
+      token.colorTextSecondary,
+      token.colorWarning
+    ]
   );
 
   return (
@@ -252,15 +269,17 @@ export default function BillingPanel() {
             }}
             enterButton
           />
-          <ExportButton
-            endpoint="/gym/exports/overdue-payments"
-            params={{
-              branchId: branchFilter || undefined,
-              search: search.trim() || undefined
-            }}
-            defaultFilename="overdue-payments.csv"
-            disabled={!branchFilter}
-          />
+          {canExportMembers ? (
+            <ExportButton
+              endpoint="/gym/exports/overdue-payments"
+              params={{
+                branchId: branchFilter || undefined,
+                search: search.trim() || undefined
+              }}
+              defaultFilename="overdue-payments.csv"
+              disabled={!branchFilter}
+            />
+          ) : null}
         </Space>
       </div>
 

@@ -9,6 +9,8 @@ import apiClient from "@/utils/api";
 import { useAppSelector } from "@/redux/hooks";
 import { selectSession } from "@/redux/features/auth/authSlice";
 import { formatInr } from "@/utils/formatCurrency";
+import { FEATURES, hasModuleAction } from "@/utils/permissions";
+import ExportButton from "@/app/components/Export/ExportButton";
 import TransactionsFilterModal, { type TransactionFilters } from "./TransactionsFilterModal";
 
 const { Title, Text } = Typography;
@@ -99,6 +101,7 @@ export default function TransactionsPanel() {
   const { message } = App.useApp();
   const { token } = theme.useToken();
   const session = useAppSelector(selectSession);
+  const canExportTransactions = hasModuleAction(session, FEATURES.TRANSACTIONS, "export");
   const defaultBranchId = session?.activeBranch?.id ?? session?.user?.defaults?.branchId ?? "";
 
   const [loading, setLoading] = useState(false);
@@ -203,15 +206,16 @@ export default function TransactionsPanel() {
     setActiveFilters(countActiveFilters(filters));
   }, [filters, countActiveFilters]);
 
-  const loadTransactions = useCallback(async () => {
-    setLoading(true);
-    try {
+  const buildFilterQueryParams = useCallback(
+    (includePagination: boolean) => {
       const params: Record<string, string> = {
-        page: String(page),
-        pageSize: String(pageSize),
         sortBy: filters.sortBy,
         sortOrder: filters.sortOrder
       };
+      if (includePagination) {
+        params.page = String(page);
+        params.pageSize = String(pageSize);
+      }
       if (filters.branchId) {
         params.branchId = filters.branchId;
       }
@@ -236,7 +240,15 @@ export default function TransactionsPanel() {
       if (filters.dateRange?.[1]) {
         params.toDate = filters.dateRange[1].endOf("day").toISOString();
       }
+      return params;
+    },
+    [filters, page, pageSize]
+  );
 
+  const loadTransactions = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = buildFilterQueryParams(true);
       const { data } = await apiClient.get<TransactionsResponse>("/gym/transactions", { params });
       if (!data.success) {
         message.error(data.message ?? "Could not load transactions.");
@@ -260,7 +272,9 @@ export default function TransactionsPanel() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, filters, message]);
+  }, [buildFilterQueryParams, message]);
+
+  const exportParams = useMemo(() => buildFilterQueryParams(false), [buildFilterQueryParams]);
 
   useEffect(() => {
     void loadTransactions();
@@ -368,6 +382,13 @@ export default function TransactionsPanel() {
           Transactions
         </Title>
         <Space>
+          {canExportTransactions ? (
+            <ExportButton
+              endpoint="/gym/exports/transactions"
+              params={exportParams}
+              defaultFilename="transactions.csv"
+            />
+          ) : null}
           <Button
             icon={<FilterOutlined />}
             type="default"
