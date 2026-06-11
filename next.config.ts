@@ -52,8 +52,8 @@ const nextConfig: NextConfig = {
       }
     ];
   },
-  // Allow LAN-origin requests during local development.
-  allowedDevOrigins: ["192.168.1.12"],
+  // Allow LAN-origin requests during local development (Next dev HMR / cross-device testing).
+  allowedDevOrigins: ["192.168.1.9", "192.168.1.12"],
   /**
    * Next otherwise picks the nearest parent `package-lock.json` as the
    * workspace root. A stray lockfile under `$HOME` breaks file tracing and

@@ -12,7 +12,8 @@ import {
   UserAddOutlined,
   UserOutlined,
   WalletOutlined,
-  SwapOutlined
+  SwapOutlined,
+  TrophyOutlined
 } from "@ant-design/icons";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { MenuProps } from "antd";
@@ -54,6 +55,7 @@ const mainMenuItems: MenuItem[] = [
   { key: "Dashboard", label: "Dashboard", icon: <HomeOutlined />, route: "/pages/dashboard" },
   { key: "Branches", label: "Branches", icon: <BankOutlined />, route: "/pages/branches" },
   { key: "GymMembers", label: "Members", icon: <TeamOutlined />, route: "/pages/members" },
+  { key: "Leaderboard", label: "Leaderboard", icon: <TrophyOutlined />, route: "/pages/leaderboard" },
   { key: "Transactions", label: "Transactions", icon: <SwapOutlined />, route: "/pages/transactions" },
   { key: "Expenses", label: "Expenses", icon: <WalletOutlined />, route: "/pages/expenses" },
   {

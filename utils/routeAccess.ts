@@ -33,6 +33,7 @@ export type MainNavItemKey =
   | "Dashboard"
   | "Branches"
   | "GymMembers"
+  | "Leaderboard"
   | "Transactions"
   | "Expenses"
   | "StaffManager"
@@ -110,6 +111,7 @@ const PROTECTED_ROUTE_ACCESS: ReadonlyArray<{ path: string; allowed: RouteAccess
       hasModuleAction(session, FEATURES.MEMBER_MANAGEMENT, "view") ||
       hasModuleAction(session, FEATURES.MEMBERSHIP_PLANS, "view")
   },
+  { path: "/pages/leaderboard", allowed: (session) => hasModuleAction(session, FEATURES.DASHBOARD, "view") },
   {
     path: "/pages/transactions",
     allowed: (session) =>
@@ -143,6 +145,7 @@ export const ACCESSIBLE_ROUTE_ORDER: ReadonlyArray<{ route: string; allowed: Rou
       hasModuleAction(session, FEATURES.MEMBER_MANAGEMENT, "view") ||
       hasModuleAction(session, FEATURES.TRANSACTIONS, "view")
   },
+  { route: "/pages/leaderboard", allowed: (session) => hasModuleAction(session, FEATURES.DASHBOARD, "view") },
   { route: "/pages/expenses", allowed: (session) => hasModuleAction(session, FEATURES.EXPENSES, "view") },
   { route: "/pages/branches", allowed: (session) => hasModuleAction(session, FEATURES.BRANCH_MANAGEMENT, "view") },
   {
@@ -217,6 +220,8 @@ export function isMainNavItemVisible(key: MainNavItemKey, session: SessionPayloa
         hasModuleAction(session, FEATURES.MEMBER_MANAGEMENT, "view") ||
         hasModuleAction(session, FEATURES.MEMBERSHIP_PLANS, "view")
       );
+    case "Leaderboard":
+      return hasModuleAction(session, FEATURES.DASHBOARD, "view");
     case "Transactions":
       return (
         hasModuleAction(session, FEATURES.MEMBER_MANAGEMENT, "view") ||

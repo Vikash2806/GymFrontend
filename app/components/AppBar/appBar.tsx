@@ -21,7 +21,7 @@ import {
   ShopOutlined
 } from "@ant-design/icons";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
-import { selectSession, setSession } from "@/redux/features/auth/authSlice";
+import { selectSession, setActiveBranch, setSession } from "@/redux/features/auth/authSlice";
 import { performUserLogout } from "@/utils/authSession";
 import { usePathname, useRouter } from "next/navigation";
 import apiClient from "@/utils/api";
@@ -213,10 +213,15 @@ export default function CustomAppBar({ onHeightChange }: CustomAppBarProps) {
       .toUpperCase() ?? "U";
 
   const onBranchChange = async (branchId: string) => {
+    const nextBranch = visibleBranches.find((branch) => branch.id === branchId) ?? null;
+    if (nextBranch) {
+      dispatch(setActiveBranch({ branch: nextBranch }));
+    }
     try {
       await apiClient.patch("/auth/branch", { branchId });
       await refreshSession(dispatch);
     } catch {
+      await refreshSession(dispatch);
       message.error("Could not switch branch.");
     }
   };
